@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: demo
+  jpa:
+    hibernate:
+      ddl-auto: validate
+server:
+  port: 8080
+app:
+  mail:
+    host: localhost
+    port: 25
+
+# Second document in the same file, selecting its own profile.
+# Verifies that `---` splitting works and does not get attributed to `default`.
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+app:
+  mail:
+    host: 127.0.0.1

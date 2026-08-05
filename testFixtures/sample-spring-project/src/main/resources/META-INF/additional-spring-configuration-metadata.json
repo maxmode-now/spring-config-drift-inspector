@@ -1,0 +1,10 @@
+{
+  "properties": [
+    { "name": "app.mail.host", "type": "java.lang.String" },
+    { "name": "app.mail.port", "type": "java.lang.Integer" },
+    { "name": "app.feature.timeout", "type": "java.time.Duration" },
+    { "name": "app.hosts", "type": "java.util.List<java.lang.String>" },
+    { "name": "app.debug.verbose", "type": "java.lang.Boolean" },
+    { "name": "app.unused-setting", "type": "java.lang.String" }
+  ]
+}

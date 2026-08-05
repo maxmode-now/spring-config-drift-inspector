@@ -1,0 +1,29 @@
+<html>
+<body>
+Highlights the results of the most recent Spring Config Drift analysis in the editor: keys missing
+from an environment, type or structure mismatches between profiles, exposed credentials,
+unresolved <code>${...}</code> references, and disagreements with
+<code>spring-configuration-metadata.json</code>.
+
+<p>
+    Because drift is a property of several files together rather than of the file being edited,
+    this inspection does not compute anything on its own — it displays the last completed
+    project-wide analysis. The analysis re-runs automatically shortly after a configuration file
+    changes, and can be triggered at any time from <b>Tools | Analyze Spring Config Drift</b>.
+    Highlights therefore reflect the last analysed state of the files, not unsaved edits.
+</p>
+
+<p>
+    Use <b>Alt+Enter</b> on a highlight to dismiss an individual finding. Dismissed findings are
+    listed in the <b>Suppressed</b> tab of the Config Drift tool window and can be restored from
+    there. Disabling this inspection hides all highlights but leaves the tool window and report
+    export unaffected.
+</p>
+
+<p>
+    Exposed credentials are the one exception: they cannot be dismissed. The remedy is to move the
+    value out of the file — for example to <code>${DB_PASSWORD}</code> — rather than to agree to
+    stop being warned about it.
+</p>
+</body>
+</html>

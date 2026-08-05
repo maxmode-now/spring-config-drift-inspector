@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    # Expect: UnresolvedPlaceholder (WARNING) — DB_HOST has no default and nothing
+    # in the project supplies it.
+    url: jdbc:postgresql://${DB_HOST}:5432/demo
+    username: prod
+    # Expect: NO finding. This is the pattern the plugin should reward, not flag.
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: none
+server:
+  port: 8080
+app:
+  feature:
+    # Expect: ShapeMismatch against dev (30) and stage (45).
+    timeout: 30s
+  # Empty list. Expect: shape LIST, and drift against dev's hosts[0]/hosts[1].
+  hosts: []
+  # Expect: SecretExposure (rule `aws-access-key-id`) even though the key name is innocuous.
+  # This is AWS's own documentation example value, not a live credential.
+  api-key: AKIAIOSFODNN7EXAMPLE
+  # Nested object where dev has a plain string. This is the case flattening hides: prod
+  # contributes `app.cache.host`/`app.cache.port` while dev contributes `app.cache`.
+  cache:
+    host: cache.internal
+    port: 6379
+  mail:
+    port: 587
+    # Typo for `host`. Expect: MetadataContractMismatch / SET_NOT_DECLARED.
+    hostt: smtp.example.com

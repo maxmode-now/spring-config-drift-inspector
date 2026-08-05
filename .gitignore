@@ -1,0 +1,9 @@
+.gradle/
+.intellijPlatform/
+build/
+out/
+.idea/
+!.idea/runConfigurations/
+*.iml
+.kotlin/
+.claude/

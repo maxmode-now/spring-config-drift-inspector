@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/demo
+    username: dev
+    # Expect: SecretExposure (rule `password`), value shown as length only.
+    password: devpassword
+  jpa:
+    hibernate:
+      # camelCase here vs kebab-case elsewhere. Expect: treated as the SAME key,
+      # i.e. NO MissingKey finding. If two separate rows appear, KeyNormalizer is broken.
+      ddlAuto: update
+server:
+  port: 8080
+app:
+  feature:
+    # Expect: ShapeMismatch against prod, which sets `30s` (INTEGER vs STRING).
+    timeout: 30
+  hosts:
+    - dev1.internal
+    - dev2.internal
+  debug:
+    # Set only here, and absent from `default`. Expect: MissingKey for prod and stage.
+    verbose: true
+  # A plain value here, but a nested object in prod. Expect: ONE ShapeMismatch (string vs map),
+  # and NO MissingKey rows for `app.cache` or `app.cache.*` — the shape conflict says it all.
+  cache: redis
+  mail:
+    port: 1025
+

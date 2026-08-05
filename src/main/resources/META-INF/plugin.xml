@@ -1,0 +1,117 @@
+<idea-plugin>
+    <id>io.github.configdrift</id>
+    <name>Spring Config Drift Inspector</name>
+    <vendor email="maxmode.now@gmail.com" url="https://github.com/maxmode-now">configdrift</vendor>
+
+    <description><![CDATA[
+    <p>Catch broken environment configuration before it reaches production. This plugin compares
+    every <code>application*.yml</code> and <code>application*.properties</code> file across your
+    profiles and reports what a code review alone tends to miss.</p>
+
+    <h3>What it finds</h3>
+    <ul>
+      <li><b>Missing keys</b> — set in some environments, silently absent from others, with
+          default-profile inheritance handled correctly</li>
+      <li><b>Shape drift</b> — the same key is a number in one environment and a string, list, or
+          nested object in another</li>
+      <li><b>Exposed secrets</b> — passwords, tokens, API keys, private keys, and credentials
+          embedded in URLs. Values are masked the moment they are detected and are never stored,
+          logged, or written to a report</li>
+      <li><b>Unresolved placeholders</b> — <code>${DB_HOST}</code> references with no default and
+          nothing in the project to supply them</li>
+      <li><b>Metadata contract violations</b> — cross-checked against
+          <code>spring-configuration-metadata.json</code> for keys declared but never set, set but
+          never declared, and simple type mismatches</li>
+    </ul>
+
+    <p>Relaxed binding is understood, so <code>driver-class-name</code>,
+    <code>driverClassName</code>, and <code>DRIVER_CLASS_NAME</code> count as one property rather
+    than three. Profiles that only override a handful of keys are recognised as partial overlays
+    instead of being reported as incomplete environments, and that judgement can be overridden per
+    profile in settings.</p>
+
+    <p>Every finding jumps to the exact key in the exact file. Results export as Markdown for a
+    pull request or JSON for a CI gate.</p>
+
+    <h3>Scope</h3>
+    <p>This is static comparison plus a lightweight metadata contract check — it does not
+    reimplement the Spring Binder, analyse <code>@ConfigurationProperties</code> classes, resolve
+    SpEL, Vault, or Config Server values, read your real environment variables, or modify your
+    files.</p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+    <h3>0.1.0</h3>
+    <ul>
+      <li>First release: cross-profile comparison of YAML and properties configuration</li>
+      <li>Missing key, shape drift, secret exposure, unresolved placeholder, and
+          metadata contract detection</li>
+      <li>Findings and key-matrix tool window with jump-to-source</li>
+      <li>Markdown and JSON report export</li>
+      <li>Partial-overlay profile detection, overridable in Settings | Tools | Config Drift</li>
+    </ul>
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.yaml</depends>
+    <depends>com.intellij.properties</depends>
+
+    <extensionPoints>
+        <!-- Reserved seam for future @ConfigurationProperties / Binder-aware analysis.
+             Nothing in the MVP implements it; it exists so adding one later does not
+             require reshaping the engine. -->
+        <extensionPoint
+            name="bindingContractProvider"
+            interface="io.github.configdrift.spi.BindingContractProvider"
+            dynamic="true"/>
+    </extensionPoints>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+            id="Config Drift"
+            anchor="bottom"
+            factoryClass="io.github.configdrift.ui.DriftToolWindowFactory"/>
+        <projectConfigurable
+            parentId="tools"
+            id="io.github.configdrift.settings"
+            displayName="Config Drift"
+            instance="io.github.configdrift.ui.ConfigDriftConfigurable"/>
+
+        <!-- language="" so a single registration covers both YAML and .properties; the
+             inspection gates on the filename itself rather than on the language. -->
+        <localInspection
+            language=""
+            shortName="SpringConfigDrift"
+            displayName="Spring configuration drift"
+            groupName="Spring Config Drift"
+            enabledByDefault="true"
+            level="WARNING"
+            implementationClass="io.github.configdrift.inspection.ConfigDriftInspection"/>
+    </extensions>
+
+    <!-- VFS change events fire on the application message bus, not a per-project one, so this
+         has to be an applicationListeners entry — a projectListeners registration compiles and
+         installs cleanly but silently never receives an event. -->
+    <applicationListeners>
+        <listener
+            class="io.github.configdrift.ConfigFileChangeListener"
+            topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+    </applicationListeners>
+
+    <!-- The MVP's own contract source goes through the public extension point rather than
+         around it, which keeps the seam honest: a future provider adds a line here. -->
+    <extensions defaultExtensionNs="io.github.configdrift">
+        <bindingContractProvider
+            implementation="io.github.configdrift.metadata.MetadataContractProvider"/>
+    </extensions>
+
+    <actions>
+        <action
+            id="ConfigDrift.Analyze"
+            class="io.github.configdrift.ui.AnalyzeConfigDriftAction"
+            text="Analyze Spring Config Drift"
+            description="Compare application config files across profiles and report drift">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

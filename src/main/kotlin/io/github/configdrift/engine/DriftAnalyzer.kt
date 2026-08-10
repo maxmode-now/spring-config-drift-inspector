@@ -54,8 +54,11 @@ class AnalysisContext(
         val counts = comparableProfiles.associateWith { profile ->
             snapshot.profile(profile)?.keys?.size ?: 0
         }
-        val settings = ConfigDriftProjectSettings.getInstance(project).state
-        OverlayHeuristic.classify(counts, settings.manualComplete, settings.manualOverlay)
+        // manualClassification() hands back a private copy rather than a live reference into
+        // settings — this runs on a background analysis thread, while the EDT can be mutating
+        // the same sets via Settings|Apply or a suppress/un-suppress action at any moment.
+        val classification = ConfigDriftProjectSettings.getInstance(project).manualClassification()
+        OverlayHeuristic.classify(counts, classification.manualComplete, classification.manualOverlay)
     }
 
     /** The profiles missing-key comparison actually runs across. */

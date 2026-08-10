@@ -211,7 +211,15 @@ data class DriftReport(
     /** Filtered out of [findings] by user choice, kept here so suppression stays reversible. */
     val suppressedFindings: List<Finding> = emptyList(),
 ) {
-    fun findingsBySeverity(): Map<Severity, List<Finding>> =
-        findings.groupBy { it.severity }
-            .toSortedMap(compareBy { it.ordinal })
+    /**
+     * Every [Severity], even ones with zero findings.
+     *
+     * `groupBy` alone would drop a severity entirely when its count is zero — invisible while
+     * testing against a fixture that always has all three, but a real difference for a CI script
+     * that expects `summary.WARNING` to exist and reads `undefined` instead of `0`.
+     */
+    fun findingsBySeverity(): Map<Severity, List<Finding>> {
+        val grouped = findings.groupBy { it.severity }
+        return Severity.entries.associateWith { grouped[it].orEmpty() }
+    }
 }

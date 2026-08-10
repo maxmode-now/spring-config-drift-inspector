@@ -7,7 +7,6 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import io.github.configdrift.ConfigDriftService
-import io.github.configdrift.discovery.ProfileNameScanner
 import io.github.configdrift.settings.ConfigDriftProjectSettings
 import java.awt.BorderLayout
 import javax.swing.JComboBox
@@ -123,32 +122,42 @@ class ConfigDriftConfigurable(private val project: Project) : Configurable {
         return DefaultCellEditor(combo)
     }
 
-    /** Prefers the real, complete profile list from the last analysis; falls back to a scan. */
+    /**
+     * Prefers the real, complete profile list from the last analysis; otherwise leaves the table
+     * empty rather than falling back to a scan.
+     *
+     * `Configurable.createComponent()` / `reset()` run on the EDT. This used to fall back to a
+     * quick content-root walk (`ProfileNameScanner`) so the table had something to show before
+     * the user ever ran an analysis — cheap on this project's own fixture, but a real project's
+     * content-root walk run synchronously on the EDT is a visible freeze the moment Settings is
+     * opened. The empty-state message already tells the user to run one first, which is a fine
+     * substitute for a preview that isn't worth blocking the UI thread for.
+     */
     private fun loadRows(): List<Row> {
-        val settings = ConfigDriftProjectSettings.getInstance(project).state
+        val classification = ConfigDriftProjectSettings.getInstance(project).manualClassification()
         val profileNames = project.service<ConfigDriftService>().lastReport
             ?.profiles
             ?.map { it.name }
             ?.filter { it != "default" }
-            ?: ProfileNameScanner.scan(project).map { it.name }
+            ?: emptyList()
 
         return profileNames.sorted().map { name ->
-            val classification = when (name) {
-                in settings.manualComplete -> Classification.COMPLETE
-                in settings.manualOverlay -> Classification.OVERLAY
+            val rowClassification = when (name) {
+                in classification.manualComplete -> Classification.COMPLETE
+                in classification.manualOverlay -> Classification.OVERLAY
                 else -> Classification.AUTO
             }
-            Row(name, classification)
+            Row(name, rowClassification)
         }
     }
 
     override fun isModified(): Boolean {
         val model = tableModel ?: return false
-        val settings = ConfigDriftProjectSettings.getInstance(project).state
+        val classification = ConfigDriftProjectSettings.getInstance(project).manualClassification()
         return model.rowsSnapshot().any { row ->
             val persisted = when (row.profileName) {
-                in settings.manualComplete -> Classification.COMPLETE
-                in settings.manualOverlay -> Classification.OVERLAY
+                in classification.manualComplete -> Classification.COMPLETE
+                in classification.manualOverlay -> Classification.OVERLAY
                 else -> Classification.AUTO
             }
             persisted != row.classification
@@ -157,16 +166,16 @@ class ConfigDriftConfigurable(private val project: Project) : Configurable {
 
     override fun apply() {
         val model = tableModel ?: return
-        val settings = ConfigDriftProjectSettings.getInstance(project).state
-        settings.manualComplete.clear()
-        settings.manualOverlay.clear()
+        val complete = mutableSetOf<String>()
+        val overlay = mutableSetOf<String>()
         for (row in model.rowsSnapshot()) {
             when (row.classification) {
-                Classification.COMPLETE -> settings.manualComplete += row.profileName
-                Classification.OVERLAY -> settings.manualOverlay += row.profileName
+                Classification.COMPLETE -> complete += row.profileName
+                Classification.OVERLAY -> overlay += row.profileName
                 Classification.AUTO -> Unit
             }
         }
+        ConfigDriftProjectSettings.getInstance(project).setManualClassification(complete, overlay)
 
         // These settings feed the overlay heuristic, which only runs during analysis — so storing
         // them changes nothing the user can see until the analysis runs again. Without this, a

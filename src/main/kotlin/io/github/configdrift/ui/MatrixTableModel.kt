@@ -32,8 +32,11 @@ class MatrixTableModel : AbstractTableModel() {
 
     override fun getColumnCount(): Int = 1 + profiles.size
 
+    // getOrNull for the same reason getValueAt uses it: setReport() fires a *structural* change,
+    // and Swing rebuilds the column model around that — an index from the pre-change column count
+    // reaching this method must degrade to a blank header, not throw out of a paint pass.
     override fun getColumnName(column: Int): String =
-        if (column == 0) "Key" else profiles[column - 1].name
+        if (column == 0) "Key" else profiles.getOrNull(column - 1)?.name ?: ""
 
     override fun getColumnClass(columnIndex: Int): Class<*> = String::class.java
 

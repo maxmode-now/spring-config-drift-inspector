@@ -101,6 +101,26 @@ neither contained `devpassword`, `changeme`, or `AKIAIOSFODNN7EXAMPLE`. The Mark
 renders the key matrix with the `O` / `^` / `-` legend, and leaves the Key column as `—` for the
 profile-level OverlayProfileExcluded finding that has no key.
 
+## `.properties` multi-profile activation — fixed, not yet run-verified
+
+`PropertiesConfigParser` took only `declaredProfiles()?.firstOrNull()`, so a `.properties` file
+declaring `spring.config.activate.on-profile=dev|stage` silently dropped `stage` — all its entries
+were attributed to `dev` alone. `YamlConfigParser` already handled this correctly via a
+`retagTo(profile)` fan-out; the fix moves that helper to `RawPair.kt` so both parsers share it,
+rather than `.properties` re-implementing (or mis-implementing) it separately.
+
+`application-shared.properties` was added to check this without disturbing the baseline above:
+
+```properties
+spring.config.activate.on-profile=dev|stage
+app.shared.flag=true
+```
+
+This can't be unit-tested — the parser needs real PSI. To verify by hand: open the **Key Matrix**
+tab and confirm `app.shared.flag` shows `O` under **both** `dev` and `stage`, not just `dev`. Exact
+finding-count deltas from this addition aren't pinned here, since they depend on whatever `local`'s
+current Settings classification is at the time — the Key Matrix row is the unambiguous signal.
+
 ## Optional refinement, deliberately not applied
 
 `app.mail.hostt` still yields two findings — the typo itself (SET_NOT_DECLARED) and the fact that

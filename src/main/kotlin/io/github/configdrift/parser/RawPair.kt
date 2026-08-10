@@ -97,3 +97,20 @@ fun List<RawPair>.declaredProfiles(): List<ProfileId>? {
     val text = firstOrNull { it.key == onProfileKey }?.text ?: return null
     return ProfileResolver.fromOnProfileExpression(text)
 }
+
+/**
+ * Reuses already-parsed entries for an additional profile the same document activates for
+ * (`on-profile: "dev|stage"` activates for both, not just the first).
+ *
+ * Shared by both parsers rather than living in `YamlConfigParser` alone: it was there first
+ * because YAML's `---` documents were the motivating case, but a `.properties` file honours the
+ * same `on-profile` key and needs the identical fan-out — a properties-only implementation that
+ * called `.firstOrNull()` on the declared profile list silently dropped every profile after the
+ * first.
+ */
+fun ParsedDocument.retagTo(profile: ProfileId): ParsedDocument =
+    ParsedDocument(
+        profile = profile,
+        entries = entries.map { it.copy(profile = profile) },
+        secretHits = secretHits.map { it.copy(profile = profile) },
+    )

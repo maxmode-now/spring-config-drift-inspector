@@ -41,6 +41,24 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <h3>0.1.1</h3>
+    <ul>
+      <li>Fixed a race where dismissing a finding while an automatic re-analysis was in flight
+          could make the dismissed finding silently reappear</li>
+      <li>Fixed a performance issue where every VFS change event in the IDE (not just config file
+          changes) triggered a virtual file resolution, needlessly on the EDT</li>
+      <li>Fixed a caching bug where a metadata file that failed to read once could stay
+          incorrectly cached as empty until its next unrelated change</li>
+      <li>Fixed a potential crash in the Key Matrix tool window when the profile set changes</li>
+      <li>Config file discovery order is now deterministic across runs</li>
+      <li>The Copy Report toolbar buttons now show a brief confirmation when the report is
+          copied to the clipboard</li>
+      <li>"Analyze Spring Config Drift" is now also available by right-clicking an
+          application*.yml/.properties file, in the Project view or the editor</li>
+      <li>A partial-overlay finding's Location column now names the Settings page it jumps to,
+          instead of showing "—" as if the row led nowhere</li>
+    </ul>
+
     <h3>0.1.0</h3>
     <ul>
       <li>First release: cross-profile comparison of YAML and properties configuration</li>
@@ -112,6 +130,11 @@
             text="Analyze Spring Config Drift"
             description="Compare application config files across profiles and report drift">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <!-- Filtered to application*.yml/.properties files at runtime by the action's own
+                 update(), not by these registrations — a popup-menu group can't express "only
+                 when the selected file matches ProfileResolver". -->
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
     </actions>
 </idea-plugin>

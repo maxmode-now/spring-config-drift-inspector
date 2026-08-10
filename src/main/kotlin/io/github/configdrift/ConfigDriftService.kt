@@ -6,6 +6,8 @@ import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
@@ -13,6 +15,7 @@ import io.github.configdrift.discovery.ConfigFileDiscovery
 import io.github.configdrift.engine.AnalysisContext
 import io.github.configdrift.engine.DriftAnalysisEngine
 import io.github.configdrift.engine.FindingFingerprint
+import io.github.configdrift.engine.MonotonicSequenceGate
 import io.github.configdrift.model.ConfigSnapshot
 import io.github.configdrift.model.DriftReport
 import io.github.configdrift.model.Finding
@@ -63,6 +66,9 @@ class ConfigDriftService(private val project: Project) {
     /**
      * Call from a background thread. The whole run sits inside one read action: parsing touches
      * PSI, and the metadata contract provider reads VFS, so both need it.
+     *
+     * Returns every finding, including ones the user has suppressed. Filtering happens in
+     * [publish] instead, on the EDT — see there for why doing it here was a race.
      */
     fun analyze(): DriftReport = ReadAction.nonBlocking<DriftReport> {
         val support = ParseSupport(project, SecretDetector())
@@ -90,13 +96,25 @@ class ConfigDriftService(private val project: Project) {
             contractProviders = BindingContractProvider.EP_NAME.extensionList,
         )
 
-        applySuppressions(DriftAnalysisEngine().analyze(project.name, context))
+        DriftAnalysisEngine().analyze(project.name, context)
     }.executeSynchronously()
 
-    /** Publish on the EDT; the tool window updates its table from the listener callback. */
+    /**
+     * Publish on the EDT; the tool window updates its table from the listener callback.
+     *
+     * Suppressions are applied here rather than at the end of [analyze] so that the read of the
+     * suppression set and every write to it happen on the same thread. Filtering inside the
+     * background analysis left a window between "read the suppressed ids" and "publish": a
+     * finding suppressed by the user during that window was still present in the report about to
+     * be published, so dismissing a finding while a save-triggered re-analysis was in flight made
+     * it reappear a moment later. Both suppression paths ([suppress] / [unsuppress], invoked from
+     * the quick fix and the tool window) already run on the EDT, so moving the read here
+     * serialises them against each other.
+     */
     fun publish(report: DriftReport) {
-        lastReport = report
-        listeners.forEach { it(report) }
+        val filtered = applySuppressions(report)
+        lastReport = filtered
+        listeners.forEach { it(filtered) }
     }
 
     /**
@@ -106,43 +124,86 @@ class ConfigDriftService(private val project: Project) {
      * documents to disk on focus changes, not just on an explicit save, so switching tabs a few
      * times can fire this several times a second. Each pending request cancels the previous one,
      * so a burst of saves costs one whole-project analysis rather than one per event.
+     *
+     * That cancellation only reaches a request that hasn't *started* yet. Once the debounce
+     * timer fires and hands off to [analyzeInBackgroundAndPublish], nothing here can stop it —
+     * and if a slow manual "Tools | Analyze" is still running when that happens, both are now in
+     * flight with no relationship to each other. [analyzeInBackgroundAndPublish]'s sequence number
+     * is what actually protects against that, not this method.
      */
     fun requestReanalysis() {
         synchronized(scheduleLock) {
             pendingReanalysis?.cancel(false)
             pendingReanalysis = AppExecutorUtil.getAppScheduledExecutorService().schedule(
-                ::runScheduledReanalysis,
+                { analyzeInBackgroundAndPublish() },
                 REANALYSIS_DEBOUNCE_MILLIS,
                 TimeUnit.MILLISECONDS,
             )
         }
     }
 
-    private fun runScheduledReanalysis() {
-        if (project.isDisposed) return
-        val report = try {
-            analyze()
-        } catch (e: ProcessCanceledException) {
-            // A cancelled read action just means the next request will pick it up.
-            return
-        } catch (e: Throwable) {
-            // A ScheduledExecutorService swallows an uncaught exception from a submitted task
-            // entirely — no log, no stack trace, nothing — unless the returned Future is polled,
-            // which nothing here does. Without this catch, a bug in the background re-analysis
-            // path would fail silently forever instead of merely once.
-            thisLogger().warn("Automatic Config Drift re-analysis failed", e)
-            return
-        }
-
+    /**
+     * Runs the analysis as a background task and publishes the result — the one path both the
+     * manual "Tools | Analyze" action and automatic re-analysis go through.
+     *
+     * A shared path is what makes the sequence number below meaningful: when the two used to
+     * queue their own separate `Task.Backgroundable`s, whichever happened to *finish* last won,
+     * regardless of which one *started* last — a slow manual analysis begun before an edit could
+     * finish after the auto re-analysis that edit triggered, and overwrite a newer result with a
+     * stale one. The sequence number is assigned when a run is requested, not when it completes,
+     * so a run that reflects older file state can never clobber one that reflects newer state,
+     * whichever thread happens to reach [publish] first.
+     *
+     * Only the debounce *wait* in [requestReanalysis] runs on the shared application scheduler —
+     * appropriate for it, since a delayed hand-off is exactly what that pool is for. The analysis
+     * itself (content-root traversal, PSI parsing) runs as a proper `Task.Backgroundable` instead:
+     * the scheduler pool is explicitly documented as unsuited to long-running work (JetBrains
+     * points to `getAppExecutorService()` or the Progress API for that) and is shared across the
+     * whole platform, so blocking one of its threads for a whole-project walk would risk delaying
+     * unrelated scheduled callbacks elsewhere in the IDE.
+     *
+     * `Task.Backgroundable.queue()` requires the EDT, hence the `invokeLater` hop — needed
+     * unconditionally since callers include both EDT (the menu action) and the scheduler's
+     * background thread (automatic re-analysis).
+     */
+    fun analyzeInBackgroundAndPublish(onSuccess: () -> Unit = {}) {
+        val sequence = sequenceGate.issue()
         ApplicationManager.getApplication().invokeLater {
             if (project.isDisposed) return@invokeLater
-            publish(report)
-            // Inspections read lastReport rather than computing anything, so they only pick up a
-            // new result once the daemon is asked to run again. Project-wide, because a single
-            // analysis can change findings in every config file at once.
-            DaemonCodeAnalyzer.getInstance(project).restart("Config Drift analysis finished")
+            object : Task.Backgroundable(project, "Analyzing Spring config drift", true) {
+                override fun run(indicator: ProgressIndicator) {
+                    indicator.isIndeterminate = true
+                    val report = try {
+                        analyze()
+                    } catch (e: ProcessCanceledException) {
+                        // A cancelled read action just means the next request will pick it up.
+                        return
+                    } catch (e: Throwable) {
+                        // Uncaught exceptions from a queued Task are reported to the IDE's own
+                        // error log, unlike the raw ScheduledExecutorService this once ran on —
+                        // this catch is now a belt-and-braces log message, not the only signal.
+                        thisLogger().warn("Config Drift analysis failed", e)
+                        return
+                    }
+
+                    ApplicationManager.getApplication().invokeLater {
+                        if (project.isDisposed) return@invokeLater
+                        // Discards this result if a run requested later has already published —
+                        // that one reflects newer file state regardless of which finished first.
+                        if (!sequenceGate.tryPublish(sequence)) return@invokeLater
+                        publish(report)
+                        // Inspections read lastReport rather than computing anything, so they only
+                        // pick up a new result once the daemon is asked to run again. Project-wide,
+                        // because one analysis can change findings in every config file at once.
+                        DaemonCodeAnalyzer.getInstance(project).restart("Config Drift analysis finished")
+                        onSuccess()
+                    }
+                }
+            }.queue()
         }
     }
+
+    private val sequenceGate = MonotonicSequenceGate()
 
     private val scheduleLock = Any()
 
@@ -165,13 +226,16 @@ class ConfigDriftService(private val project: Project) {
     }
 
     private fun updateSuppressions(mutate: (MutableSet<String>) -> Unit) {
-        mutate(ConfigDriftProjectSettings.getInstance(project).state.suppressedFindingIds)
+        ConfigDriftProjectSettings.getInstance(project).mutateSuppressedFindingIds(mutate)
         val current = lastReport ?: return
-        val everything = current.copy(
-            findings = current.findings + current.suppressedFindings,
-            suppressedFindings = emptyList(),
+        // Hand publish() the *unfiltered* report — it re-partitions from scratch, which is what
+        // makes un-suppressing able to bring a finding back rather than only ever hiding more.
+        publish(
+            current.copy(
+                findings = current.findings + current.suppressedFindings,
+                suppressedFindings = emptyList(),
+            ),
         )
-        publish(applySuppressions(everything))
         // The tool window updates itself through the listener `publish` already notifies, but the
         // editor's inline highlights are the inspection's own business — nothing repaints them
         // until the daemon is explicitly told to. Callers (the quick fix, the tool window's
@@ -188,7 +252,7 @@ class ConfigDriftService(private val project: Project) {
     }
 
     private fun applySuppressions(report: DriftReport): DriftReport {
-        val suppressedIds = ConfigDriftProjectSettings.getInstance(project).state.suppressedFindingIds
+        val suppressedIds = ConfigDriftProjectSettings.getInstance(project).suppressedFindingIds()
         if (suppressedIds.isEmpty()) return report
 
         // The suppressible check is repeated on the read path so a settings file written before

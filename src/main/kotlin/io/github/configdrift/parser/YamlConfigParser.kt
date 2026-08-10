@@ -3,7 +3,6 @@ package io.github.configdrift.parser
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import io.github.configdrift.model.ProfileId
 import io.github.configdrift.model.ValueShape
 import org.jetbrains.yaml.psi.YAMLFile
 import org.jetbrains.yaml.psi.YAMLMapping
@@ -38,7 +37,8 @@ class YamlConfigParser : ConfigFileParser {
             val profiles = pairs.declaredProfiles() ?: listOf(fileProfile)
             val first = pairs.toParsedDocument(support, psiFile, profiles.first())
             // A document may activate for several profiles at once (`on-profile: "dev|stage"`);
-            // the same entries then legitimately belong to each of them.
+            // the same entries then legitimately belong to each of them. Shared with
+            // PropertiesConfigParser, which needs the identical fan-out for the same reason.
             listOf(first) + profiles.drop(1).map { first.retagTo(it) }
         }
     }
@@ -133,11 +133,3 @@ class YamlConfigParser : ConfigFileParser {
         }
     }
 }
-
-/** Reuses already-parsed entries for an additional profile the same document activates for. */
-private fun ParsedDocument.retagTo(profile: ProfileId): ParsedDocument =
-    ParsedDocument(
-        profile = profile,
-        entries = entries.map { it.copy(profile = profile) },
-        secretHits = secretHits.map { it.copy(profile = profile) },
-    )

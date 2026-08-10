@@ -27,9 +27,18 @@ class FindingFingerprintTest {
     }
 
     @Test
-    fun `missingIn and presentIn changing does not affect the fingerprint`() {
-        // A key that starts missing from one profile and later also drops from a second is
-        // still "the same finding" from the user's point of view — the suppression should hold.
+    fun `presentIn changing alone does not affect the fingerprint`() {
+        val key = NormalizedKey("app.debug.verbose")
+        val a = MissingKey(key, missingIn = listOf(ProfileId("prod")), presentIn = listOf(ProfileId("dev")), location = here)
+        val b = a.copy(presentIn = listOf(ProfileId("dev"), ProfileId("qa")))
+        assertEquals(FindingFingerprint.of(a), FindingFingerprint.of(b))
+    }
+
+    @Test
+    fun `missingIn changing produces a different fingerprint`() {
+        // A key that starts missing from one profile and later also drops from a second is a
+        // materially different fact — suppressing "missing in prod" must not also silently
+        // suppress the new, unrelated "missing in stage" too.
         val key = NormalizedKey("app.debug.verbose")
         val a = MissingKey(key, missingIn = listOf(ProfileId("prod")), presentIn = listOf(ProfileId("dev")), location = here)
         val b = MissingKey(
@@ -37,6 +46,18 @@ class FindingFingerprintTest {
             missingIn = listOf(ProfileId("prod"), ProfileId("stage")),
             presentIn = listOf(ProfileId("dev")),
             location = here,
+        )
+        assertNotEquals(FindingFingerprint.of(a), FindingFingerprint.of(b))
+    }
+
+    @Test
+    fun `missingIn order does not affect the fingerprint`() {
+        val key = NormalizedKey("app.debug.verbose")
+        val a = MissingKey(
+            key, missingIn = listOf(ProfileId("prod"), ProfileId("stage")), presentIn = emptyList(), location = here,
+        )
+        val b = MissingKey(
+            key, missingIn = listOf(ProfileId("stage"), ProfileId("prod")), presentIn = emptyList(), location = here,
         )
         assertEquals(FindingFingerprint.of(a), FindingFingerprint.of(b))
     }

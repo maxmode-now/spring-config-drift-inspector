@@ -35,6 +35,22 @@ class ConfigFileDiscovery {
             file.name in METADATA_FILE_NAMES && file.parent?.name == "META-INF"
         }
 
+    /**
+     * Results are sorted by path, because the traversal order is not something to rely on.
+     *
+     * `VirtualFile.getChildren()` returns children in VFS record order, not alphabetically, so
+     * two machines — or the same machine after a VFS rebuild — can walk the same project in
+     * different orders. That leaked into the result: when one profile is fed by more than one
+     * file (`application-dev.yml` plus a `---` document in `application.yml` that activates on
+     * `dev`, say), `ProfileSnapshot.byKey` resolves a repeated key last-wins, so traversal order
+     * decided which value and which jump-to-source location won. Sorting makes that choice
+     * reproducible.
+     *
+     * It does not make it *Spring's* choice: modelling the real precedence between two sources
+     * feeding one profile is config-location semantics, which this plugin deliberately does not
+     * reimplement. Deterministic-but-arbitrary is the honest position, and it is strictly better
+     * than arbitrary-and-unstable.
+     */
     private fun collect(
         project: Project,
         skipBuildOutput: Boolean,
@@ -57,7 +73,7 @@ class ConfigFileDiscovery {
                 },
             )
         }
-        return result
+        return result.sortedBy { it.path }
     }
 
     private companion object {

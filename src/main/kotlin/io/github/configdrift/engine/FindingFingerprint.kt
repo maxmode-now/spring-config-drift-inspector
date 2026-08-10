@@ -16,11 +16,18 @@ import io.github.configdrift.model.UnresolvedPlaceholder
  * file, and a fingerprint built from it would silently un-suppress a finding the moment someone
  * adds a blank line above it. What survives an edit is the *kind* of problem and where it
  * conceptually lives — the key, the profile, the rule that fired — not the exact offset.
+ *
+ * [MissingKey], by contrast, deliberately *does* include which profiles the key is missing from.
+ * `MissingKeyAnalyzer` groups by key, so one finding can read "missing in prod" today and "missing
+ * in prod, stage" after a later edit — a fingerprint of the key alone would treat those as the
+ * same finding, so suppressing "missing in prod" would also silently suppress the unrelated new
+ * fact that it is now missing from stage too.
  */
 object FindingFingerprint {
 
     fun of(finding: Finding): String = when (finding) {
-        is MissingKey -> "MissingKey:${finding.key}"
+        is MissingKey ->
+            "MissingKey:${finding.key}:${finding.missingIn.map { it.name }.sorted().joinToString(",")}"
         is ShapeMismatch -> "ShapeMismatch:${finding.key}"
         is SecretExposure -> "SecretExposure:${finding.key}:${finding.profile}:${finding.ruleId}"
         is UnresolvedPlaceholder ->

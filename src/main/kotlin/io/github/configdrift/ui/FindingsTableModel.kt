@@ -2,6 +2,7 @@ package io.github.configdrift.ui
 
 import io.github.configdrift.model.DriftReport
 import io.github.configdrift.model.Finding
+import io.github.configdrift.model.OverlayProfileExcluded
 import io.github.configdrift.model.Severity
 import javax.swing.table.AbstractTableModel
 
@@ -46,9 +47,18 @@ class FindingsTableModel : AbstractTableModel() {
             // OverlayProfileExcluded reads as missing data, not as "this isn't about one key."
             1 -> finding.key?.value ?: "—"
             2 -> finding.message
-            // "—" for the same reason the Key column uses it: a blank cell looks like data that
-            // failed to load, when it actually means this finding has no file position at all.
-            3 -> finding.location?.let { "${it.filePath}:${it.line}" } ?: "—"
+            // OverlayProfileExcluded has no file location, but Jump to Source still does
+            // something for it — NavigateAction sends it to Settings | Tools | Config Drift
+            // instead. Showing that destination here matters more than it looks: a bare "—"
+            // told the user there was nothing to navigate to, when double-clicking the row
+            // actually opened Settings. A first-time user has no way to discover that a row
+            // marked unreachable is, in fact, reachable — the Location cell is the only place
+            // that claim could be corrected.
+            3 -> if (finding is OverlayProfileExcluded) {
+                "Settings | Tools | Config Drift"
+            } else {
+                finding.location?.let { "${it.filePath}:${it.line}" } ?: "—"
+            }
             else -> ""
         }
     }

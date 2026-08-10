@@ -9,7 +9,8 @@ import com.intellij.psi.PsiFile
  *
  * Simpler than YAML: keys are already flat and a `.properties` file cannot be split into
  * documents. It can still retag itself wholesale via `spring.config.activate.on-profile`, which
- * is honoured here.
+ * is honoured here — including activating for several profiles at once (`on-profile=dev|stage`),
+ * the same as a YAML document does.
  */
 class PropertiesConfigParser : ConfigFileParser {
 
@@ -31,7 +32,8 @@ class PropertiesConfigParser : ConfigFileParser {
         }.collapseIndexedLists()
         if (pairs.isEmpty()) return emptyList()
 
-        val profile = pairs.declaredProfiles()?.firstOrNull() ?: fileProfile
-        return listOf(pairs.toParsedDocument(support, psiFile, profile))
+        val profiles = pairs.declaredProfiles() ?: listOf(fileProfile)
+        val first = pairs.toParsedDocument(support, psiFile, profiles.first())
+        return listOf(first) + profiles.drop(1).map { first.retagTo(it) }
     }
 }

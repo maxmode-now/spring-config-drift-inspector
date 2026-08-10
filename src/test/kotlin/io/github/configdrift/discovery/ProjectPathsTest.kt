@@ -55,4 +55,31 @@ class ProjectPathsTest {
             ProjectPaths.relativize(null, "D:/proj/application.yml"),
         )
     }
+
+    @Test
+    fun `a case difference between the two paths still matches, drive letter`() {
+        // Project.basePath and a VirtualFile.path for the same real file are not guaranteed to
+        // agree on case on Windows — a case-sensitive match here would silently leave the path
+        // absolute, putting the developer's local directory layout in every exported report.
+        assertEquals(
+            "src/main/resources/application.yml",
+            ProjectPaths.relativize("D:/proj", "d:/proj/src/main/resources/application.yml"),
+        )
+    }
+
+    @Test
+    fun `a case difference between the two paths still matches, path segment`() {
+        assertEquals(
+            "src/main/resources/application.yml",
+            ProjectPaths.relativize("D:/Proj", "D:/PROJ/src/main/resources/application.yml"),
+        )
+    }
+
+    @Test
+    fun `case-insensitive matching does not break the sibling-directory exclusion`() {
+        assertEquals(
+            "D:/PROJ2/application.yml",
+            ProjectPaths.relativize("d:/proj", "D:/PROJ2/application.yml"),
+        )
+    }
 }

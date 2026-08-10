@@ -89,6 +89,36 @@ class DriftToolWindowPanel(private val project: Project) :
     // not invoked until the listener fires later) can rely on it always being set by then.
     private val tabs: JBTabbedPane
 
+    /**
+     * Re-asserts the matrix's current search text / "gaps only" state, set by
+     * [buildMatrixFilterRow]. Called again after every report below rather than trusted to persist
+     * on its own: a live IDE report of the matrix filter going inert after re-analysis did not
+     * reproduce under a plain-JDK unit test of `TableRowSorter` across a structural change (the
+     * sorter identity and its installed `rowFilter` both survived in that test), so the exact
+     * mechanism is unconfirmed. Re-applying unconditionally fixes the symptom regardless of which
+     * assumption about Swing's internals turns out to be wrong.
+     */
+    private var reapplyMatrixFilter: () -> Unit = {}
+
+    /**
+     * Shown beside the toolbar buttons themselves, not the IDE status bar: the New UI's status
+     * bar dropped the general-purpose text region `StatusBar.setInfo` used to write into, so a
+     * message sent there in a current IDE version is set but never actually rendered anywhere.
+     * A label living in the toolbar's own row has nowhere to fail to appear — it is already part
+     * of the component tree the user is looking at when they click Copy.
+     *
+     * Declared here, ahead of `init {}`: [createToolbar] reads this property, and `init {}` calls
+     * [createToolbar] as part of building [toolbar] — Kotlin runs property initializers in the
+     * order they appear in the class body, so a declaration any later than this crashed the
+     * constructor with a `NullPointerException` from `JPanel.add(null)`, taking the tool window's
+     * entire content down with it.
+     */
+    private val copyStatusLabel = JBLabel().apply {
+        border = javax.swing.BorderFactory.createEmptyBorder(0, 8, 0, 0)
+    }
+
+    private var copyStatusTimer: javax.swing.Timer? = null
+
     private val onReport: (DriftReport) -> Unit = { report ->
         findingsModel.setReport(report)
         severityCounts.refresh(report)
@@ -97,6 +127,7 @@ class DriftToolWindowPanel(private val project: Project) :
         // Re-applied per report: the matrix rebuilds its columns whenever the profile set changes,
         // which discards any width set earlier.
         tuneMatrixColumnWidths()
+        reapplyMatrixFilter()
         tabs.setTitleAt(
             SUPPRESSED_TAB_INDEX,
             if (report.suppressedFindings.isEmpty()) "Suppressed" else "Suppressed (${report.suppressedFindings.size})",
@@ -128,7 +159,14 @@ class DriftToolWindowPanel(private val project: Project) :
             project.service<ConfigDriftService>().unsuppress(finding)
         }
 
-        matrixTable.autoCreateRowSorter = true
+        // Not autoCreateRowSorter: the matrix's column count changes with the profile set, so
+        // MatrixTableModel.setReport() calls fireTableStructureChanged() on every analysis run.
+        // Per JTable's own contract, an auto-created sorter is discarded and replaced with a new
+        // instance on every structural change — silently detaching whatever RowFilter
+        // buildMatrixFilterRow() had installed on the old one. Owning the sorter ourselves means
+        // it survives every structure change instead of being swapped out from under the filter.
+        val matrixSorter = TableRowSorter<TableModel>(matrixModel)
+        matrixTable.rowSorter = matrixSorter
         matrixTable.autoResizeMode = JBTable.AUTO_RESIZE_OFF
 
         val filterRow = buildFilterRow(findingsTable)
@@ -180,6 +218,7 @@ class DriftToolWindowPanel(private val project: Project) :
 
     override fun dispose() {
         project.service<ConfigDriftService>().removeListener(onReport)
+        copyStatusTimer?.stop()
     }
 
     private fun createToolbar(): javax.swing.JComponent {
@@ -192,7 +231,11 @@ class DriftToolWindowPanel(private val project: Project) :
         val actionToolbar = ActionManager.getInstance()
             .createActionToolbar("ConfigDrift.Toolbar", group, true)
         actionToolbar.targetComponent = findingsTable
-        return actionToolbar.component
+        return JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(actionToolbar.component, BorderLayout.WEST)
+            add(copyStatusLabel, BorderLayout.CENTER)
+        }
     }
 
     /**
@@ -383,6 +426,10 @@ class DriftToolWindowPanel(private val project: Project) :
             }
         }
 
+        // Lets onReport re-run the same filter after every analysis, whatever effect the report's
+        // model changes turn out to have on the sorter.
+        reapplyMatrixFilter = ::applyFilter
+
         return JPanel(BorderLayout()).apply {
             add(search, BorderLayout.CENTER)
             add(scope, BorderLayout.EAST)
@@ -393,6 +440,8 @@ class DriftToolWindowPanel(private val project: Project) :
     private companion object {
         /** Must match the order tabs are added to [tabs] in `init`. */
         const val SUPPRESSED_TAB_INDEX = 1
+
+        const val COPY_NOTICE_MILLIS = 2000
     }
 
     private inner class RerunAction :
@@ -427,6 +476,33 @@ class DriftToolWindowPanel(private val project: Project) :
         override fun actionPerformed(e: AnActionEvent) {
             val report = project.service<ConfigDriftService>().lastReport ?: return
             CopyPasteManager.getInstance().setContents(StringSelection(renderer.render(report)))
+            showCopiedNotice("${renderer.id.uppercase()} report copied to clipboard")
+        }
+    }
+
+    /**
+     * A copy action's only effect is on the system clipboard, which nothing in the tool window
+     * itself reflects — pressing the button and seeing no change on screen is indistinguishable
+     * from the click not registering at all.
+     *
+     * Two other approaches were tried and dropped, in order:
+     *  - A balloon anchored to the toolbar. This tool window's `anchor="bottom"` in plugin.xml
+     *    puts the toolbar near the bottom edge of the IDE frame, so a balloon anchored below it
+     *    has nowhere on-screen to point — it silently recentred on the whole monitor instead of
+     *    failing, which read as even less connected to the click than no feedback at all.
+     *  - `StatusBar.setInfo`. The call succeeds, but the New UI's status bar has no general-text
+     *    region left to render it in, so the message is set and immediately invisible.
+     *
+     * [copyStatusLabel] avoids both problems by not needing a screen position at all — it already
+     * sits in the toolbar's own row, so there is nowhere for it to end up but exactly where the
+     * user is looking.
+     */
+    private fun showCopiedNotice(message: String) {
+        copyStatusTimer?.stop()
+        copyStatusLabel.text = message
+        copyStatusTimer = javax.swing.Timer(COPY_NOTICE_MILLIS) { copyStatusLabel.text = "" }.apply {
+            isRepeats = false
+            start()
         }
     }
 }

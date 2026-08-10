@@ -20,6 +20,19 @@ import com.intellij.util.xmlb.XmlSerializerUtil
  * Profiles and findings are keyed by plain strings (not [io.github.configdrift.model.ProfileId] /
  * [io.github.configdrift.engine.FindingFingerprint]-typed values) because a persisted XML state
  * must be a plain serializable shape.
+ *
+ * The [State.manualComplete] / [State.manualOverlay] / [State.suppressedFindingIds] sets are
+ * plain `MutableSet`s, mutated on the EDT (Settings|Apply, the suppress/un-suppress actions) and
+ * read while an analysis runs on a background `Task.Backgroundable` thread
+ * ([io.github.configdrift.engine.AnalysisContext.overlayProfiles],
+ * [io.github.configdrift.ConfigDriftService]'s suppression filtering). Neither `LinkedHashSet`
+ * (Kotlin's `mutableSetOf()`) nor `HashSet` tolerates a write on one thread racing a read on
+ * another — the practical failure mode is a `ConcurrentModificationException` thrown out of the
+ * analysis, though silent corruption of the set itself is possible too. All access from outside
+ * this class must go through the synchronized methods below rather than touching [State]'s
+ * fields directly, which is what actually closes that gap: the fields stay plain, ordinary
+ * `MutableSet`s (so XML (de)serialization needs nothing special) and every read gets a private,
+ * unshared copy instead of a live reference into whatever the EDT might be mutating.
  */
 @State(name = "ConfigDriftSettings", storages = [Storage("configDrift.xml")])
 @Service(Service.Level.PROJECT)
@@ -33,12 +46,44 @@ class ConfigDriftProjectSettings : PersistentStateComponent<ConfigDriftProjectSe
         var suppressedFindingIds: MutableSet<String> = mutableSetOf()
     }
 
+    private val lock = Any()
     private var myState = State()
 
-    override fun getState(): State = myState
+    // Required by PersistentStateComponent for the platform's own (de)serialization; plugin code
+    // must not call this directly — use the synchronized accessors below instead. Returns a fresh
+    // copy, not the live myState: the platform reflects over whatever this returns to write XML
+    // at a time this class doesn't control, after the lock below has already been released, so a
+    // live reference would still be exposed to the same race this class exists to close.
+    override fun getState(): State = synchronized(lock) {
+        State().also {
+            it.manualComplete = myState.manualComplete.toMutableSet()
+            it.manualOverlay = myState.manualOverlay.toMutableSet()
+            it.suppressedFindingIds = myState.suppressedFindingIds.toMutableSet()
+        }
+    }
 
     override fun loadState(state: State) {
-        XmlSerializerUtil.copyBean(state, myState)
+        synchronized(lock) { XmlSerializerUtil.copyBean(state, myState) }
+    }
+
+    /** A private, unshared copy — safe to iterate from a background analysis thread. */
+    fun manualClassification(): OverlayClassification = synchronized(lock) {
+        OverlayClassification(myState.manualComplete.toSet(), myState.manualOverlay.toSet())
+    }
+
+    fun setManualClassification(complete: Set<String>, overlay: Set<String>) = synchronized(lock) {
+        myState.manualComplete = complete.toMutableSet()
+        myState.manualOverlay = overlay.toMutableSet()
+    }
+
+    /** A private, unshared copy — safe to iterate from a background analysis thread. */
+    fun suppressedFindingIds(): Set<String> = synchronized(lock) {
+        myState.suppressedFindingIds.toSet()
+    }
+
+    /** Runs [mutate] against the live set under the same lock every read above uses. */
+    fun mutateSuppressedFindingIds(mutate: (MutableSet<String>) -> Unit) = synchronized(lock) {
+        mutate(myState.suppressedFindingIds)
     }
 
     companion object {
@@ -46,3 +91,5 @@ class ConfigDriftProjectSettings : PersistentStateComponent<ConfigDriftProjectSe
             project.getService(ConfigDriftProjectSettings::class.java)
     }
 }
+
+data class OverlayClassification(val manualComplete: Set<String>, val manualOverlay: Set<String>)

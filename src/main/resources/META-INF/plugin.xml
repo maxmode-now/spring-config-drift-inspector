@@ -5,8 +5,9 @@
 
     <description><![CDATA[
     <p>Catch broken environment configuration before it reaches production. This plugin compares
-    every <code>application*.yml</code>, <code>application*.properties</code>, and <code>.env</code>
-    file across your profiles and reports what a code review alone tends to miss.</p>
+    every <code>application*.yml</code>, <code>application*.properties</code>, <code>.env</code>,
+    and <code>docker-compose*.yml</code> file across your profiles and reports what a code review
+    alone tends to miss.</p>
 
     <h3>What it finds</h3>
     <ul>
@@ -41,6 +42,20 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <h3>0.3.0</h3>
+    <ul>
+      <li>New: <code>docker-compose.yml</code> / <code>compose.yml</code> files are now compared
+          across profiles too — each service's <code>environment:</code> block is checked, keyed
+          per service (<code>web.DB_HOST</code>, <code>worker.DB_HOST</code> are tracked as
+          separate variables). Profiles follow the filename
+          (<code>docker-compose.yml</code>, <code>docker-compose.production.yml</code>,
+          <code>docker-compose.override.yml</code>); <code>env_file:</code> references are not
+          followed</li>
+      <li>Unresolved-placeholder detection now also understands Compose's
+          <code>${VAR:-default}</code> default-value syntax, not just Spring's
+          <code>${VAR:default}</code></li>
+    </ul>
+
     <h3>0.2.0</h3>
     <ul>
       <li>New: <code>.env</code> files are now compared across profiles too, alongside

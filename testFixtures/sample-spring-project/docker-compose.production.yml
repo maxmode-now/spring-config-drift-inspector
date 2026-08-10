@@ -1,0 +1,10 @@
+services:
+  web:
+    environment:
+      DB_HOST: prod-db.internal
+      DB_PASSWORD: ${DB_PASSWORD}
+      APP_PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+  worker:
+    environment:
+      - QUEUE_URL=redis://prod:6379

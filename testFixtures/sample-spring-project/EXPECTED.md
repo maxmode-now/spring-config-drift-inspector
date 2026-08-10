@@ -165,3 +165,60 @@ To verify by hand:
    line in the `.env.staging` file. This is the one that actually matters for this addition — it
    proves the new offset-based `ParseSupport.locationOf(psiFile, offset)` overload (no PSI element
    backing it, unlike Yaml/Properties) still produces a correct, clickable location.
+
+## `docker-compose.yml` support — not yet run-verified
+
+`docker-compose.yml` (minimal, just to check the bare-filename case is recognized as `default`),
+`docker-compose.staging.yml`, and `docker-compose.production.yml` were added to check the new
+`DockerComposeConfigParser` end to end. Deliberately reuses the `staging`/`production` profile
+names the `.env` fixtures above already established, to also confirm two different formats
+contribute to the *same* Key Matrix column when they name the same environment.
+
+```
+docker-compose.yml:
+  services.web.environment: { APP_NAME: sample-app }
+
+docker-compose.staging.yml:
+  services.web.environment:
+    DB_HOST: staging-db.internal
+    DB_PASSWORD: devpassword123
+    APP_PORT: "8080"
+    LOG_LEVEL: debug
+    DEBUG:                        # value-less — "pass through from host" in real Compose
+  services.worker.environment:
+    - QUEUE_URL=redis://staging:6379
+    - WORKER_CONCURRENCY=2
+
+docker-compose.production.yml:
+  services.web.environment:
+    DB_HOST: prod-db.internal
+    DB_PASSWORD: ${DB_PASSWORD}
+    APP_PORT: "8080"
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+  services.worker.environment:
+    - QUEUE_URL=redis://prod:6379
+```
+
+`WORKER_CONCURRENCY` is deliberately *not* also declared in the bare `docker-compose.yml`: a key
+declared in the `default` profile is treated as inherited everywhere (the same rule that shields
+Spring's `application.yml` keys from being flagged missing), so putting it there would silently
+disable the exact MissingKey check this fixture exists to demonstrate.
+
+To verify by hand:
+1. **Key Matrix** shows keys as `web.DB_HOST`, `web.DB_PASSWORD`, `worker.QUEUE_URL`, etc. —
+   service-qualified, not bare env var names — confirming `web`'s and `worker`'s variables don't
+   collide as if they were the same key.
+2. The `staging`/`production` columns are the *same* columns the `.env` fixtures already produced,
+   not new duplicate ones — confirms cross-format profile merging by name.
+3. `web.DB_PASSWORD` in staging (plaintext `devpassword123`) produces a masked SecretExposure;
+   in production (`${DB_PASSWORD}`, no default) it produces **no finding at all**.
+4. `web.LOG_LEVEL` in production (`${LOG_LEVEL:-info}`, bash-style default) produces **no**
+   UnresolvedPlaceholder — confirms the `Placeholders.kt` `:-` extension actually reaches a real
+   analysis, not just the unit test.
+5. `worker.WORKER_CONCURRENCY` (staging only) and `web.DEBUG` (staging only, value-less) both
+   produce MissingKey findings against production — confirms a value-less `environment:` entry is
+   recorded as present-with-empty-value rather than silently dropped.
+6. Double-click any docker-compose finding: the caret lands on the key inside the `environment:`
+   block, in the correct file — this one uses real YAML PSI (unlike `.env`), so it's confirming the
+   existing `ParseSupport.locationOf(psiFile, element)` path still works for a narrower walk than
+   `YamlConfigParser`'s general one.

@@ -1,0 +1,12 @@
+services:
+  web:
+    environment:
+      DB_HOST: staging-db.internal
+      DB_PASSWORD: devpassword123
+      APP_PORT: "8080"
+      LOG_LEVEL: debug
+      DEBUG:
+  worker:
+    environment:
+      - QUEUE_URL=redis://staging:6379
+      - WORKER_CONCURRENCY=2

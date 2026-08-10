@@ -43,4 +43,20 @@ class PlaceholdersTest {
         assertFalse(Placeholders.isFullyExternalized("prefix-\${DB_PASSWORD}"))
         assertFalse(Placeholders.isFullyExternalized("literal"))
     }
+
+    @Test
+    fun `bash-style colon-dash default is recognised`() {
+        val ref = Placeholders.parse("\${DB_HOST:-localhost}").single()
+        assertEquals("DB_HOST", ref.name)
+        assertEquals("localhost", ref.defaultValue)
+    }
+
+    @Test
+    fun `a spring kebab-case property name with no default is not misread as one`() {
+        // The whole point of requiring the colon: a bare `-` inside a name must never be treated
+        // as a default-value separator, since Spring placeholders can legitimately be kebab-case.
+        val ref = Placeholders.parse("\${server.error.include-stacktrace}").single()
+        assertEquals("server.error.include-stacktrace", ref.name)
+        assertNull(ref.defaultValue)
+    }
 }

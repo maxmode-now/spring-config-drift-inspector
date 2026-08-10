@@ -1,5 +1,6 @@
 package io.github.configdrift.discovery
 
+import io.github.configdrift.parser.DockerComposeNaming
 import io.github.configdrift.parser.DotenvNaming
 import io.github.configdrift.parser.ProfileResolver
 
@@ -10,8 +11,8 @@ import io.github.configdrift.parser.ProfileResolver
  * `.properties` convention alone, so call sites that aren't parser-specific — VFS listening,
  * inspection gating, context-menu visibility — were coupled to Spring-only naming even though
  * their own logic has nothing Spring-specific in it. This aggregator is what they should call
- * instead; adding a future format (docker-compose) means appending one more reference here, not
- * touching any of those call sites again.
+ * instead; adding a future format means appending one more reference here, not touching any of
+ * those call sites again — docker-compose support did exactly that.
  *
  * [io.github.configdrift.parser.YamlConfigParser] and
  * [io.github.configdrift.parser.PropertiesConfigParser] deliberately keep calling
@@ -23,6 +24,7 @@ object ConfigFormats {
     private val matchers: List<(String) -> Boolean> = listOf(
         ProfileResolver::isConfigFileName,
         DotenvNaming::matches,
+        DockerComposeNaming::matches,
     )
 
     fun isKnownConfigFile(fileName: String): Boolean = matchers.any { it(fileName) }

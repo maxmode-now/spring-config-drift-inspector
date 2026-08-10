@@ -222,3 +222,40 @@ To verify by hand:
    block, in the correct file — this one uses real YAML PSI (unlike `.env`), so it's confirming the
    existing `ParseSupport.locationOf(psiFile, element)` path still works for a narrower walk than
    `YamlConfigParser`'s general one.
+
+## `@ConfigurationProperties` PSI contract provider — not yet run-verified
+
+`src/main/java/org/springframework/boot/context/properties/ConfigurationProperties.java` (a
+minimal stand-in annotation — this fixture has no build file and no real Spring Boot dependency,
+only the fully qualified name matters to the provider) and
+`src/main/java/com/example/sample/MailProperties.java` were added to check
+`ConfigurationPropertiesContractProvider` end to end. This is *not* in `additional-spring-configuration-metadata.json`
+— the whole point of this fixture is that these properties are recognized without one.
+
+```java
+@ConfigurationProperties(prefix = "app.mail")
+public class MailProperties {
+    private String host;       // app.mail.host — leaf
+    private Smtp smtp;         // recursed into — not a known leaf/container type
+    private List<String> aliases; // app.mail.aliases — container leaf, not recursed into
+
+    public static class Smtp {
+        private int port;      // app.mail.smtp.port — leaf, nested one level
+    }
+}
+```
+
+To verify by hand:
+1. Add `app.mail.hots: something` (typo'd `host`) to a profile — expect `SET_NOT_DECLARED`, since
+   `app.mail` is now a declared namespace even with no metadata JSON entry for it.
+2. Set `app.mail.smtp.port: not-a-number` in one profile — expect `TYPE_MISMATCH` against `int`,
+   confirming the recursion into `Smtp` produced a real, one-level-deep contract.
+3. Add `app.mail.aliases[0]: someone@example.com` — expect **no** `SET_NOT_DECLARED` on the indexed
+   child path, confirming `List<String>` is treated as one open container contract (matching
+   `MetadataContractAnalyzer`'s existing `isOpenContainer` exemption), not recursed into.
+4. Add an unrelated `app.mail.smtp.host: x` (a property `Smtp` doesn't actually declare) — expect
+   `SET_NOT_DECLARED`, confirming recursion produces a real per-nested-class contract rather than
+   treating the whole `smtp` subtree as open.
+5. This whole class was reachable without a real Spring Boot dependency on the fixture's
+   classpath — confirms the provider resolves the annotation by qualified name, not by requiring
+   the genuine library.

@@ -21,8 +21,9 @@
       <li><b>Unresolved placeholders</b> — <code>${DB_HOST}</code> references with no default and
           nothing in the project to supply them</li>
       <li><b>Metadata contract violations</b> — cross-checked against
-          <code>spring-configuration-metadata.json</code> for keys declared but never set, set but
-          never declared, and simple type mismatches</li>
+          <code>spring-configuration-metadata.json</code> and, when present, your own
+          <code>@ConfigurationProperties</code> classes (Java) for keys declared but never set, set
+          but never declared, and simple type mismatches</li>
     </ul>
 
     <p>Relaxed binding is understood, so <code>driver-class-name</code>,
@@ -36,12 +37,22 @@
 
     <h3>Scope</h3>
     <p>This is static comparison plus a lightweight metadata contract check — it does not
-    reimplement the Spring Binder, analyse <code>@ConfigurationProperties</code> classes, resolve
-    SpEL, Vault, or Config Server values, read your real environment variables, or modify your
-    files.</p>
+    reimplement the Spring Binder (nested properties inside a list/map of a custom type aren't
+    modeled, only the container itself), resolve SpEL, Vault, or Config Server values, read your
+    real environment variables, or modify your files. <code>@ConfigurationProperties</code>
+    reading is Java only for now; Kotlin support is planned.</p>
     ]]></description>
 
     <change-notes><![CDATA[
+    <h3>0.4.0</h3>
+    <ul>
+      <li>New: metadata contract checks (declared-but-unset, set-but-undeclared, type mismatches)
+          now also read your project's own <code>@ConfigurationProperties</code> classes (Java),
+          not just <code>spring-configuration-metadata.json</code> — useful when the annotation
+          processor that generates that file isn't enabled, or doesn't cover every class</li>
+      <li>This plugin now depends on the bundled Java plugin (<code>com.intellij.java</code>)</li>
+    </ul>
+
     <h3>0.3.0</h3>
     <ul>
       <li>New: <code>docker-compose.yml</code> / <code>compose.yml</code> files are now compared
@@ -98,11 +109,12 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.plugins.yaml</depends>
     <depends>com.intellij.properties</depends>
+    <depends>com.intellij.java</depends>
 
     <extensionPoints>
-        <!-- Reserved seam for future @ConfigurationProperties / Binder-aware analysis.
-             Nothing in the MVP implements it; it exists so adding one later does not
-             require reshaping the engine. -->
+        <!-- The seam @ConfigurationPropertiesContractProvider now plugs into, alongside
+             MetadataContractProvider — added so a future provider (e.g. Kotlin support)
+             does not require reshaping the engine either. -->
         <extensionPoint
             name="bindingContractProvider"
             interface="io.github.configdrift.spi.BindingContractProvider"
@@ -141,11 +153,13 @@
             topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
     </applicationListeners>
 
-    <!-- The MVP's own contract source goes through the public extension point rather than
-         around it, which keeps the seam honest: a future provider adds a line here. -->
+    <!-- Contract sources go through the public extension point rather than around it, which
+         keeps the seam honest: a future provider (Kotlin support, say) adds a line here. -->
     <extensions defaultExtensionNs="io.github.configdrift">
         <bindingContractProvider
             implementation="io.github.configdrift.metadata.MetadataContractProvider"/>
+        <bindingContractProvider
+            implementation="io.github.configdrift.metadata.ConfigurationPropertiesContractProvider"/>
     </extensions>
 
     <actions>

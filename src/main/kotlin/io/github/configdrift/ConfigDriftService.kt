@@ -21,6 +21,7 @@ import io.github.configdrift.model.DriftReport
 import io.github.configdrift.model.Finding
 import io.github.configdrift.model.ProfileSnapshot
 import io.github.configdrift.parser.ConfigFileParser
+import io.github.configdrift.parser.DotenvConfigParser
 import io.github.configdrift.parser.ParseSupport
 import io.github.configdrift.parser.ParsedDocument
 import io.github.configdrift.parser.PropertiesConfigParser
@@ -43,7 +44,7 @@ import java.util.concurrent.TimeUnit
 class ConfigDriftService(private val project: Project) {
 
     private val parsers: List<ConfigFileParser> =
-        listOf(YamlConfigParser(), PropertiesConfigParser())
+        listOf(YamlConfigParser(), PropertiesConfigParser(), DotenvConfigParser())
 
     private val listeners = CopyOnWriteArrayList<(DriftReport) -> Unit>()
 

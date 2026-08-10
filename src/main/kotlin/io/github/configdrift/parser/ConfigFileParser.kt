@@ -56,8 +56,17 @@ class ParseSupport(
 
     fun drainSecretHits(): List<SecretHit> = hits.toList().also { hits.clear() }
 
-    fun locationOf(psiFile: PsiFile, element: PsiElement): SourceLocation {
-        val offset = element.textRange.startOffset
+    fun locationOf(psiFile: PsiFile, element: PsiElement): SourceLocation =
+        locationOf(psiFile, element.textRange.startOffset)
+
+    /**
+     * For formats with no PSI language of their own (`.env`), so there is no [PsiElement] to read
+     * an offset from in the first place. `OpenFileDescriptor` (what [io.github.configdrift.ui.SourceNavigator]
+     * ultimately opens) only ever needs an integer offset, so jump-to-source is exactly as precise
+     * here as it is for the PSI-backed formats — this overload only skips the unnecessary
+     * intermediate `PsiElement`.
+     */
+    fun locationOf(psiFile: PsiFile, offset: Int): SourceLocation {
         val document = psiFile.viewProvider.document
         val line = document?.getLineNumber(offset)?.plus(1) ?: 1
         return SourceLocation(

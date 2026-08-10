@@ -18,11 +18,16 @@ value class ProfileId(val name: String) : Comparable<ProfileId> {
 }
 
 /**
- * A configuration key in Spring's canonical relaxed-binding form, so that
- * `my-prop`, `myProp`, and `MY_PROP` collapse to one comparable identity.
+ * A key identifying one config property, comparable across profiles.
  *
- * Always build these through [io.github.configdrift.parser.KeyNormalizer]; the constructor
- * is intentionally dumb so the normalization rule lives in exactly one place.
+ * Always build these through a named normalizer, never the constructor directly, so each format's
+ * normalization rule lives in exactly one place:
+ *  - [io.github.configdrift.parser.KeyNormalizer] for Spring's relaxed-binding form, where
+ *    `my-prop`, `myProp`, and `MY_PROP` collapse to one comparable identity.
+ *  - [io.github.configdrift.parser.DotenvKeyNormalizer] for `.env` files, which is a no-op
+ *    beyond trimming — POSIX env vars are case-sensitive with no relaxed-binding ambiguity to
+ *    reconcile, so normalizing them the Spring way would cause false collisions instead of
+ *    resolving real ones (`DB_HOST` and `DBHOST` are different variables).
  */
 @JvmInline
 value class NormalizedKey(val value: String) : Comparable<NormalizedKey> {

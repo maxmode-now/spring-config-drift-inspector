@@ -1,5 +1,6 @@
 package io.github.configdrift.secrets
 
+import io.github.configdrift.model.NormalizedKey
 import io.github.configdrift.parser.KeyNormalizer
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,6 +14,10 @@ class SecretDetectorTest {
         detector.detect(KeyNormalizer.normalize(key), value)
 
     private fun ruleId(key: String, value: String?) = detect(key, value)?.rule?.id
+
+    /** Simulates a dotenv key, which bypasses [KeyNormalizer] — see `DotenvKeyNormalizer`. */
+    private fun detectVerbatim(key: String, value: String?) =
+        detector.detect(NormalizedKey(key), value)
 
     @Test
     fun `hardcoded password is reported`() {
@@ -73,6 +78,23 @@ class SecretDetectorTest {
     fun `key names that merely end in key are not credentials`() {
         assertNull(detect("app.cache-key", "orders-v2"))
         assertNull(detect("app.partition-key", "tenant_id"))
+    }
+
+    @Test
+    fun `dotenv-style underscore-separated keys are recognised too`() {
+        // Dotenv keys bypass KeyNormalizer, so the literal underscore survives — these regexes
+        // have to recognise it directly rather than relying on KeyNormalizer having already
+        // stripped it, as Spring keys can assume.
+        assertEquals("password", detectVerbatim("DB_PASSWORD", "hunter2")?.rule?.id)
+        assertEquals("api-key", detectVerbatim("API_KEY", "abc123")?.rule?.id)
+        assertEquals("token", detectVerbatim("ACCESS_TOKEN", "abc123")?.rule?.id)
+        assertEquals("secret", detectVerbatim("CLIENT_SECRET", "abc123")?.rule?.id)
+    }
+
+    @Test
+    fun `dotenv-style keys that merely end in key are still not credentials`() {
+        assertNull(detectVerbatim("CACHE_KEY", "orders-v2"))
+        assertNull(detectVerbatim("PARTITION_KEY", "tenant_id"))
     }
 
     @Test

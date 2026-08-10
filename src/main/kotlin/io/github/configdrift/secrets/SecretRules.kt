@@ -21,26 +21,44 @@ object SecretRules {
 
     private fun key(pattern: String) = Regex(pattern, RegexOption.IGNORE_CASE)
 
+    /**
+     * Optional separator between the two halves of a compound word, e.g. `access[SEP]key`
+     * matches `accesskey` (Spring, hyphens/underscores already stripped by `KeyNormalizer`) *and*
+     * `ACCESS_KEY` (dotenv, which bypasses `KeyNormalizer` — see [io.github.configdrift.parser.DotenvKeyNormalizer]
+     * — so its separator survives as a literal character in the middle of the word).
+     */
+    private const val SEP = "[._-]?"
+
     val DEFAULTS: List<SecretRule> = listOf(
-        // Key-name driven. These carry most of the value in practice, because Spring config
-        // keys are conventional: anything named *.password is a credential slot.
+        // Key-name driven. These carry most of the value in practice, because config keys are
+        // conventional: anything named *.password (or *_PASSWORD) is a credential slot.
+        //
+        // The leading `(^|[._-])` boundary and the `SEP` inside compound words both matter for
+        // the same reason: Spring's `KeyNormalizer` collapses `api-key`/`API_KEY` down to one
+        // contiguous `apikey` before these rules ever see it, but dotenv keys (`API_KEY`) are
+        // matched verbatim, so the separator is still there — both as the word boundary before
+        // the match and, for compound words, in the middle of it.
         SecretRule(
             id = "password",
-            keyPattern = key("""(^|\.)(password|passwd|pwd)$"""),
+            keyPattern = key("""(^|[._-])(password|passwd|pwd)$"""),
         ),
         SecretRule(
             id = "secret",
-            keyPattern = key("""(^|\.)(secret|clientsecret|secretkey)$"""),
+            keyPattern = key("""(^|[._-])(secret|client${SEP}secret|secret${SEP}key)$"""),
         ),
         SecretRule(
             id = "token",
-            keyPattern = key("""(^|\.)(token|accesstoken|refreshtoken|authtoken)$"""),
+            keyPattern = key(
+                """(^|[._-])(token|access${SEP}token|refresh${SEP}token|auth${SEP}token)$""",
+            ),
         ),
         // Enumerated rather than `...key$`: the loose form also matched innocuous names like
         // `cache-key` and `partition-key`.
         SecretRule(
             id = "api-key",
-            keyPattern = key("""(^|\.)(apikey|accesskey|privatekey|credentials)$"""),
+            keyPattern = key(
+                """(^|[._-])(api${SEP}key|access${SEP}key|private${SEP}key|credentials)$""",
+            ),
         ),
 
         // Value driven. These fire regardless of key name, catching credentials parked under

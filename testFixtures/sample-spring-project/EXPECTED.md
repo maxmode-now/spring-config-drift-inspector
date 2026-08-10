@@ -127,3 +127,41 @@ current Settings classification is at the time — the Key Matrix row is the una
 other profiles lack it (MissingKey). Suppressing MissingKey for keys already reported as undeclared
 would cut two rows, but it assumes the project's metadata is complete. Projects that only annotate
 some of their properties would lose a real signal, so this is left as a judgement call.
+
+## `.env` support — not yet run-verified
+
+`.env.staging` and `.env.production` were added at the project root (dotenv's own convention —
+alongside `src/`, not inside `src/main/resources/`) to check the new `DotenvConfigParser` end to
+end. Deltas from this addition aren't pinned into the finding-count sections above, since they
+depend on the same Settings-classification and metadata state as everything else — check these
+signals directly instead:
+
+```
+.env.staging:
+  APP_NAME=sample-app
+  DB_HOST=staging-db.internal
+  DB_PASSWORD=devpassword123
+  FEATURE_FLAG_BETA=true
+
+.env.production:
+  APP_NAME=sample-app
+  DB_HOST=prod-db.internal
+  DB_PASSWORD=${DB_PASSWORD}
+```
+
+To verify by hand:
+1. **Key Matrix** shows `staging` and `production` as their own columns, distinct from Spring's
+   existing `stage`/`prod` — confirms dotenv profiles don't collide with Spring ones just because
+   the names are similar.
+2. `DB_PASSWORD` in `.env.staging` (plaintext `devpassword123`) produces a SecretExposure, masked
+   the same way as the Spring password findings above.
+3. `DB_PASSWORD` in `.env.production` (`${DB_PASSWORD}`, no default) produces **no finding at
+   all** — same "correctly externalized" rule the Spring fixture already exercises, now proven to
+   apply to a format that never goes through `KeyNormalizer`.
+4. `FEATURE_FLAG_BETA` (set in `.env.staging`, absent from `.env.production` and every Spring
+   profile) produces a MissingKey finding — confirms cross-format comparison, not just
+   within-format.
+5. Double-click the `FEATURE_FLAG_BETA` or `DB_PASSWORD` finding: the caret lands on the correct
+   line in the `.env.staging` file. This is the one that actually matters for this addition — it
+   proves the new offset-based `ParseSupport.locationOf(psiFile, offset)` overload (no PSI element
+   backing it, unlike Yaml/Properties) still produces a correct, clickable location.

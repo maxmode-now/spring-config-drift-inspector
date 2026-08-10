@@ -5,7 +5,7 @@ import com.intellij.openapi.project.ProjectLocator
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
-import io.github.configdrift.parser.ProfileResolver
+import io.github.configdrift.discovery.ConfigFormats
 
 /**
  * Re-runs the analysis when a configuration file changes on disk, so the editor highlights stay
@@ -17,9 +17,9 @@ import io.github.configdrift.parser.ProfileResolver
  * is also why this class takes no constructor argument and resolves the owning project itself, via
  * [ProjectLocator], for each changed file.
  *
- * Filters to `application*` files first: an unrelated file change must not trigger a whole-project
- * config analysis. The actual scheduling — and the debounce that keeps a burst of saves from
- * costing several runs — lives in [ConfigDriftService.requestReanalysis].
+ * Filters to files [ConfigFormats] recognizes first: an unrelated file change must not trigger a
+ * whole-project config analysis. The actual scheduling — and the debounce that keeps a burst of
+ * saves from costing several runs — lives in [ConfigDriftService.requestReanalysis].
  */
 class ConfigFileChangeListener : BulkFileListener {
 
@@ -59,5 +59,5 @@ class ConfigFileChangeListener : BulkFileListener {
     }
 
     private fun isConfigPath(path: String): Boolean =
-        ProfileResolver.isConfigFileName(path.substringAfterLast('/'))
+        ConfigFormats.isKnownConfigFile(path.substringAfterLast('/'))
 }

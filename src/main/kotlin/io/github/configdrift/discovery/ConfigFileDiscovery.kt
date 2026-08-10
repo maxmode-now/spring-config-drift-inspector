@@ -5,7 +5,6 @@ import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileVisitor
-import io.github.configdrift.parser.ProfileResolver
 
 /**
  * Locates the files the analysis runs on.
@@ -18,7 +17,7 @@ class ConfigFileDiscovery {
 
     fun discoverConfigFiles(project: Project): List<VirtualFile> =
         collect(project, skipBuildOutput = true) { file ->
-            ProfileResolver.isConfigFileName(file.name)
+            ConfigFormats.isKnownConfigFile(file.name)
         }
 
     /**

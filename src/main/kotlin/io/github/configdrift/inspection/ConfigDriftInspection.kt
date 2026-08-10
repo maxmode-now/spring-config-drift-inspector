@@ -9,10 +9,10 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiFile
 import io.github.configdrift.ConfigDriftService
+import io.github.configdrift.discovery.ConfigFormats
 import io.github.configdrift.discovery.ProjectPaths
 import io.github.configdrift.model.Finding
 import io.github.configdrift.model.Severity
-import io.github.configdrift.parser.ProfileResolver
 
 /**
  * Shows the latest analysis result as editor highlights.
@@ -35,7 +35,7 @@ class ConfigDriftInspection : LocalInspectionTool() {
         isOnTheFly: Boolean,
     ): Array<ProblemDescriptor>? {
         val virtualFile = file.virtualFile ?: return null
-        if (!ProfileResolver.isConfigFileName(virtualFile.name)) return null
+        if (!ConfigFormats.isKnownConfigFile(virtualFile.name)) return null
 
         val project = file.project
         val report = project.service<ConfigDriftService>().lastReport ?: return null

@@ -9,7 +9,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 import io.github.configdrift.ConfigDriftService
-import io.github.configdrift.parser.ProfileResolver
+import io.github.configdrift.discovery.ConfigFormats
 
 /**
  * Entry point: Tools | Analyze Spring Config Drift, plus a right-click shortcut from the Project
@@ -42,7 +42,7 @@ class AnalyzeConfigDriftAction : AnAction() {
         }
 
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
-        e.presentation.isEnabledAndVisible = file != null && ProfileResolver.isConfigFileName(file.name)
+        e.presentation.isEnabledAndVisible = file != null && ConfigFormats.isKnownConfigFile(file.name)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

@@ -1,5 +1,8 @@
 # Spring Config Drift Inspector
 
+[![Version](https://img.shields.io/jetbrains/plugin/v/33357)](https://plugins.jetbrains.com/plugin/33357-spring-config-drift-inspector)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/33357)](https://plugins.jetbrains.com/plugin/33357-spring-config-drift-inspector)
+
 Catch broken environment configs before they reach production — right inside IntelliJ.
 
 `Spring Config Drift Inspector` compares every `application*.yml` / `application*.properties`,
@@ -89,7 +92,11 @@ default.
 
 ## Installation
 
-Not yet on the JetBrains Marketplace. Until then:
+**From the JetBrains Marketplace** (recommended): in your IDE, **Settings/Preferences → Plugins →
+Marketplace**, search for "Spring Config Drift Inspector", and install — or install directly from
+the [plugin page](https://plugins.jetbrains.com/plugin/33357-spring-config-drift-inspector).
+
+**From a release zip** (for a specific version, or before it's approved on a new IDE release):
 
 1. Download `spring-config-drift-inspector-<version>.zip` from
    [Releases](../../releases), or build it yourself (see below).

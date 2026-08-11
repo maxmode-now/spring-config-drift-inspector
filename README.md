@@ -2,11 +2,11 @@
 
 Catch broken environment configs before they reach production — right inside IntelliJ.
 
-`Spring Config Drift Inspector` compares every `application*.yml` / `application*.properties`
-file in your project across profiles (`default`, `dev`, `stage`, `prod`, ...) and reports what a
-code review alone will miss: keys that exist in `dev` but got dropped from `prod`, a value that's
-an `int` in one environment and a `String` in another, credentials committed in plaintext, and
-`${ENV_VAR}` references nothing actually supplies.
+`Spring Config Drift Inspector` compares every `application*.yml` / `application*.properties`,
+`.env`, and `docker-compose*.yml` file in your project across profiles (`default`, `dev`, `stage`,
+`prod`, ...) and reports what a code review alone will miss: keys that exist in `dev` but got
+dropped from `prod`, a value that's an `int` in one environment and a `String` in another,
+credentials committed in plaintext, and `${ENV_VAR}` references nothing actually supplies.
 
 ![Findings tab: severity counts, filters, and a masked credential](docs/images/findings.png)
 
@@ -37,8 +37,14 @@ runtime — it flags what's inconsistent, missing, or exposed in your files as w
 - ✅ **Unresolved placeholders** — `${DB_HOST}` with no default and nothing in the project to
   supply it; reported as INFO/WARNING, never as a hard error, because the plugin can't see your
   real deployment environment
-- ✅ **Metadata contract checks** — cross-references `spring-configuration-metadata.json` for keys
-  declared but never set, set but never declared, and simple type mismatches
+- ✅ **Metadata contract checks** — cross-references `spring-configuration-metadata.json` and,
+  when present, your own `@ConfigurationProperties` classes (Java) for keys declared but never
+  set, set but never declared, and simple type mismatches
+- ✅ **`.env` and Docker Compose support** — the same comparison, secret detection, and
+  placeholder analysis apply to `.env`/`.env.<profile>` files and each service's `environment:`
+  block in `docker-compose*.yml`/`compose*.yml`, keyed per service so `web`'s and `worker`'s
+  variables never collide. Comparisons stay scoped within one config system — a Spring-only key
+  is never reported "missing" from an `.env`-only profile
 - ✅ **Partial-overlay awareness** — a profile that only overrides a couple of keys
   (`SPRING_PROFILES_ACTIVE=prod,local`-style) isn't mistaken for an incomplete environment; the
   guess is shown as an INFO finding and can be overridden per profile in **Settings → Tools →
@@ -62,13 +68,18 @@ seconds after you save a config file — no need to keep re-running the analysis
 
 Scope is a feature here, not a limitation to apologize for:
 
-- No `@ConfigurationProperties` class analysis or Spring Binder reimplementation
+- No full Spring Binder reimplementation — `@ConfigurationProperties` reading is a lightweight,
+  Java-only PSI walk (Kotlin classes aren't read yet), and nested properties inside a
+  `List<CustomType>`/`Map<String, CustomType>` element aren't modeled, only the container itself
 - No SpEL, Vault, or Config Server resolution
 - No live environment-variable lookup — the plugin only knows what's in your repository
+- No `docker-compose`'s `env_file:` references — only values written directly in an
+  `environment:` block are compared
 - No automatic fixes — it reports, you decide
 
-If real binding validation becomes worth the complexity later, it plugs into a dedicated
-extension point (`BindingContractProvider`) without reshaping the engine.
+`@ConfigurationProperties` reading and every config format's parser go through the same
+`BindingContractProvider`/`ConfigFileParser` extension points, so deeper binding validation or a
+new format later plugs in without reshaping the engine.
 
 ## Requirements
 
@@ -94,9 +105,13 @@ cd spring-config-drift-inspector
 The packaged plugin appears at `build/distributions/*.zip`. Gradle will download a JDK 21
 toolchain automatically if one isn't already installed.
 
+Full docs, including format-specific gotchas and an FAQ, live in the
+[wiki](https://github.com/maxmode-now/spring-config-drift-inspector/wiki).
+
 ## Usage
 
-1. Open a project containing `application*.yml` / `.properties` files.
+1. Open a project containing `application*.yml` / `.properties`, `.env`, and/or
+   `docker-compose*.yml` files.
 2. **Tools → Analyze Spring Config Drift** — required once, so there's something to show.
    After that, saving a config file re-runs the analysis automatically.
 3. Review results in the **Config Drift** tool window, or as inline highlights in the editor:

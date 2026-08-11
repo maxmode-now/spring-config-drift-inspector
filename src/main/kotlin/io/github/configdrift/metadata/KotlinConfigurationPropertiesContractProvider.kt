@@ -134,8 +134,12 @@ class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
             }
             val simpleName = userType.referencedName
 
-            if (simpleName == null || ConfigurationPropertyTypes.isKnownLeafOrContainerSimpleName(simpleName)) {
+            if (simpleName == null) {
                 contracts[key] = leafContract(key, typeReference.text)
+                continue
+            }
+            if (ConfigurationPropertyTypes.isKnownLeafOrContainerSimpleName(simpleName)) {
+                contracts[key] = leafContract(key, javaEquivalentTypeText(userType, simpleName))
                 continue
             }
 
@@ -154,6 +158,25 @@ class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
         defaultValue = null,
         sourceProviderId = providerId,
     )
+
+    /**
+     * Translates the base type name to its Java equivalent via
+     * [ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES] — see that map's KDoc for why
+     * reporting Kotlin's own spelling would silently defeat
+     * [io.github.configdrift.engine.MetadataContractAnalyzer]'s type checks. Only the base name
+     * needs translating: that analyzer discards everything from `<` onward when matching against
+     * its fixed type-name sets, so the generic argument text only needs to be *preserved* for
+     * display, not translated too. [userType]'s own text is used rather than the full
+     * [KtTypeReference]'s, specifically so a nullable declaration's trailing `?` (which belongs to
+     * the outer `KtNullableType`, not this inner element) can't leak into the result and break the
+     * exact-string match the same way the untranslated Kotlin name would have.
+     */
+    private fun javaEquivalentTypeText(userType: KtUserType, simpleName: String): String {
+        val javaBase = ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES[simpleName]
+            ?: return userType.text
+        val genericSuffix = userType.text.removePrefix(simpleName)
+        return javaBase + genericSuffix
+    }
 
     /** Unwraps a `Type?` nullable annotation to reach the underlying [KtUserType], if any. */
     private fun unwrapToUserType(typeReference: KtTypeReference): KtUserType? {

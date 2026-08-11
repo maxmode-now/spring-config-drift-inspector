@@ -294,6 +294,17 @@ To verify by hand:
 4. Confirm `app.mail.*` (the Java fixture) and `app.server.*` (this one) both work in the same
    analysis run — the two providers are independent and additive, not an either/or.
 
+Check #2 above is worth calling out specifically: it was originally written as if it already
+worked, but didn't. `KotlinConfigurationPropertiesContractProvider` reported `declaredType` in
+Kotlin's own spelling (`"Int"`, `"Long"`, `"List<String>"`), and `MetadataContractAnalyzer` matches
+by exact string against a Java-spelled set (`"java.lang.Integer"`, `"java.util.List"`, ...) — so
+`TYPE_MISMATCH` silently never fired for any Kotlin numeric/boolean property, and a Kotlin
+`List`/`Map` property was never recognized as an open container, which would have made
+`app.server.database.url` in check #3 misfire too. Fixed by having the provider translate the base
+type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES`)
+before building the contract — caught by manual review before this was ever run-verified, which is
+exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
+
 ## Cross-system comparison scoping — the bug this fixture caught
 
 Adding `.env` and docker-compose support to a fixture that already had Spring config exposed a

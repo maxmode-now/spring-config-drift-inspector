@@ -220,4 +220,41 @@ object ConfigurationPropertyTypes {
 
     fun isKnownLeafOrContainerSimpleName(simpleName: String): Boolean =
         simpleName in KOTLIN_LEAF_SIMPLE_NAMES || simpleName in KOTLIN_CONTAINER_SIMPLE_NAMES
+
+    /**
+     * A Kotlin-spelled base type name (`"Int"`, `"List"`, `"BigDecimal"`) mapped to the
+     * Java-spelled name [io.github.configdrift.engine.MetadataContractAnalyzer] actually checks
+     * against ([LEAF_TYPE_NAMES]/[CONTAINER_TYPE_NAMES] above, its own private mirror of the same
+     * sets). [io.github.configdrift.spi.KeyContract.declaredType]'s documented format is
+     * Java-FQN-style regardless of which provider produced it — reporting `"Int"` unmodified would
+     * satisfy nothing in [MetadataContractAnalyzer]'s fixed type-name sets, since it matches by
+     * exact string, not shape: `TYPE_MISMATCH` would never fire for a Kotlin `Int`/`Long`/... or
+     * `Boolean` property, and a Kotlin `List`/`Map` property wouldn't be recognized as an open
+     * container, producing false `SET_NOT_DECLARED` on its children. Only names with a real
+     * Java-side counterpart in those checked sets are here — `String`, `Duration`, and the other
+     * common value types are absent on purpose, matching [MetadataContractAnalyzer]'s own
+     * documented behavior of skipping them for *any* provider, Java included.
+     */
+    val KOTLIN_TO_JAVA_BASE_TYPE_NAMES: Map<String, String> = mapOf(
+        "Boolean" to "java.lang.Boolean",
+        "Int" to "java.lang.Integer",
+        "Long" to "java.lang.Long",
+        "Short" to "java.lang.Short",
+        "Byte" to "java.lang.Byte",
+        "BigInteger" to "java.math.BigInteger",
+        "Double" to "java.lang.Double",
+        "Float" to "java.lang.Float",
+        "BigDecimal" to "java.math.BigDecimal",
+        "List" to "java.util.List",
+        "MutableList" to "java.util.List",
+        "Set" to "java.util.Set",
+        "MutableSet" to "java.util.Set",
+        "SortedSet" to "java.util.SortedSet",
+        "Collection" to "java.util.Collection",
+        "Array" to "java.util.List",
+        "Map" to "java.util.Map",
+        "MutableMap" to "java.util.Map",
+        "SortedMap" to "java.util.SortedMap",
+        "Properties" to "java.util.Properties",
+    )
 }

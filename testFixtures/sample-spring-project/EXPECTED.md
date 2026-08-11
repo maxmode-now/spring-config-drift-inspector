@@ -305,6 +305,34 @@ type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BAS
 before building the contract — caught by manual review before this was ever run-verified, which is
 exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
 
+## Deleting a whole config folder didn't trigger re-analysis
+
+`ConfigFileChangeListener.nameLooksLikeConfig()` decides relevance from `VFileEvent.path`'s
+basename, deliberately avoiding `getFile()` for the common case — see its own KDoc for why (a
+VFS-change batch can hold tens of thousands of unrelated events). That works for a single config
+file being created, edited, deleted, or renamed. It silently missed one case: deleting an entire
+*directory* that contains config files (e.g. removing `src/main/resources/`, or a folder holding
+`application-prod.yml`). The VFS delivers one `VFileDeleteEvent` for the directory itself, whose
+path's basename (`resources`, or whatever the folder is named) is never a config file name, so
+`nameLooksLikeConfig` filtered it out before ever asking what was inside it — the last analysis
+report kept referencing files that no longer existed, with nothing to trigger a re-run.
+
+Checking the directory's contents in `after()` wouldn't have worked either: by the time `after()`
+fires, the delete has already applied, and the directory's children are gone from the VFS — there's
+nothing left to walk. `BulkFileListener.before()` fires while the tree is still intact, which is
+the only place this check can happen at all. Fixed by adding a `before()` override that, for each
+`VFileDeleteEvent` whose target is a directory, walks its still-existing children
+(`VfsUtilCore.visitChildrenRecursively`) for anything `ConfigFormats` recognises, and remembers the
+owning project(s) for `after()` to fold into its own re-analysis trigger. The recursive walk only
+runs for an actual directory-delete event — never for the tens of thousands of unrelated events in
+a typical batch — so this doesn't reopen the performance concern `nameLooksLikeConfig` exists to
+avoid.
+
+To verify by hand: with an on-the-fly analysis result already showing, delete the whole folder
+holding one of this fixture's profile files (or add a new subfolder with a copy of one first, to
+avoid disturbing the tracked baseline) from the Project view, and confirm the tool window /
+Findings update to reflect the deletion without needing a manual **Tools | Analyze**.
+
 ## Settings table: an uncommitted combo-box edit could be lost on Apply/OK
 
 `ConfigDriftConfigurable`'s per-profile classification table uses a `JComboBox` cell editor

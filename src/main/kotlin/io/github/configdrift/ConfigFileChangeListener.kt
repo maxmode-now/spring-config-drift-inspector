@@ -1,8 +1,13 @@
 package io.github.configdrift
 
 import com.intellij.openapi.components.service
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectLocator
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileVisitor
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import io.github.configdrift.discovery.ConfigFormats
@@ -23,6 +28,37 @@ import io.github.configdrift.discovery.ConfigFormats
  */
 class ConfigFileChangeListener : BulkFileListener {
 
+    /**
+     * Populated by [before] for a directory-delete event whose contents (checked while the VFS
+     * tree still existed) included a config file — see [before]'s KDoc for why that check can't
+     * happen in [after]. `before`/`after` are always called back to back, synchronously, for the
+     * same event batch, on the same thread, so a plain field is enough; no two batches ever
+     * overlap here.
+     */
+    private var projectsFromDeletedConfigDirs: Set<Project> = emptySet()
+
+    /**
+     * A directory being deleted loses its children the moment the delete is applied — [after]
+     * would see only that *something* named e.g. `resources` disappeared, with no way left to ask
+     * whether it used to contain an `application-prod.yml`. `before` fires while the tree is still
+     * intact, so it's the only place a whole-directory delete can be recognised as config-relevant
+     * at all; `nameLooksLikeConfig`'s basename check alone would silently ignore it, since a
+     * directory's own name is never a config file name.
+     *
+     * Filtered to [VFileDeleteEvent] first, same reasoning as [nameLooksLikeConfig]: this method
+     * runs for every event in a batch that can be tens of thousands large, so the recursive child
+     * walk below must stay reachable only by the rare directory-delete case, not by every event.
+     */
+    override fun before(events: List<VFileEvent>) {
+        projectsFromDeletedConfigDirs = events.asSequence()
+            .filterIsInstance<VFileDeleteEvent>()
+            .mapNotNull { it.file }
+            .filter { it.isDirectory && containsConfigFile(it) }
+            .flatMap { ProjectLocator.getInstance().getProjectsForFile(it).asSequence() }
+            .filterNotNull()
+            .toSet()
+    }
+
     override fun after(events: List<VFileEvent>) {
         val affectedProjects = events.asSequence()
             // Name check before touching getFile(), never after — see nameLooksLikeConfig.
@@ -30,13 +66,30 @@ class ConfigFileChangeListener : BulkFileListener {
             .mapNotNull { it.file }
             .flatMap { ProjectLocator.getInstance().getProjectsForFile(it).asSequence() }
             .filterNotNull()
-            .toSet()
+            .toSet() + projectsFromDeletedConfigDirs
+        projectsFromDeletedConfigDirs = emptySet()
 
         for (project in affectedProjects) {
             if (!project.isDisposed) {
                 project.service<ConfigDriftService>().requestReanalysis()
             }
         }
+    }
+
+    private fun containsConfigFile(dir: VirtualFile): Boolean {
+        var found = false
+        VfsUtilCore.visitChildrenRecursively(
+            dir,
+            object : VirtualFileVisitor<Unit>() {
+                override fun visitFile(file: VirtualFile): Boolean {
+                    if (!file.isDirectory && ConfigFormats.isKnownConfigFile(file.name)) {
+                        found = true
+                    }
+                    return !found
+                }
+            },
+        )
+        return found
     }
 
     /**

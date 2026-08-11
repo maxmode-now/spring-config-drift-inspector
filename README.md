@@ -9,7 +9,8 @@ Catch broken environment configs before they reach production — right inside I
 `.env`, and `docker-compose*.yml` file in your project across profiles (`default`, `dev`, `stage`,
 `prod`, ...) and reports what a code review alone will miss: keys that exist in `dev` but got
 dropped from `prod`, a value that's an `int` in one environment and a `String` in another,
-credentials committed in plaintext, and `${ENV_VAR}` references nothing actually supplies.
+credentials committed in plaintext, and `${ENV_VAR}` references that nothing in the repository
+actually supplies.
 
 ![Findings tab: severity counts, filters, and a masked credential](docs/images/findings.png)
 
@@ -36,7 +37,9 @@ runtime — it flags what's inconsistent, missing, or exposed in your files as w
   in another
 - ✅ **Exposed secrets** — passwords, tokens, API keys, private keys, and credentials embedded in
   URLs, detected by value *and* by key name — masked immediately at detection time, never stored
-  or logged in plaintext
+  or logged in plaintext. Correctly externalized values (`${DB_PASSWORD}`, or
+  `postgresql://${DB_USER}:${DB_PASSWORD}@…`) are left alone; only what is actually committed
+  (including non-blank placeholder defaults) is flagged
 - ✅ **Unresolved placeholders** — `${DB_HOST}` with no default and nothing in the project to
   supply it; reported as INFO/WARNING, never as a hard error, because the plugin can't see your
   real deployment environment
@@ -49,9 +52,9 @@ runtime — it flags what's inconsistent, missing, or exposed in your files as w
   variables never collide. Comparisons stay scoped within one config system — a Spring-only key
   is never reported "missing" from an `.env`-only profile
 - ✅ **Partial-overlay awareness** — a profile that only overrides a couple of keys
-  (`SPRING_PROFILES_ACTIVE=prod,local`-style) isn't mistaken for an incomplete environment; the
-  guess is shown as an INFO finding and can be overridden per profile in **Settings → Tools →
-  Config Drift**
+  (`SPRING_PROFILES_ACTIVE=prod,local`-style) isn't mistaken for an incomplete environment. The
+  guess is made **within each config system** (Spring / `.env` / Compose separately), shown as an
+  INFO finding, and can be overridden per profile in **Settings → Tools → Config Drift**
 - ✅ **Relaxed-binding aware** — `driver-class-name`, `driverClassName`, and `DRIVER_CLASS_NAME`
   are recognized as the same property, so renamed-spelling isn't reported as drift
 
@@ -63,7 +66,8 @@ to externalize the value, not to agree to stop hearing about it. Reports export 
 PR comment) or JSON (for a CI gate).
 
 Findings also show up as live highlights in the editor, re-checked automatically a couple of
-seconds after you save a config file — no need to keep re-running the analysis by hand:
+seconds after you save a config file — or after a config file/folder is moved, renamed, or
+deleted — no need to keep re-running the analysis by hand:
 
 ![Inline highlights in application-dev.yml](docs/images/inline-inspection.png)
 
@@ -125,7 +129,8 @@ Full docs, including format-specific gotchas and an FAQ, live in the
    `docker-compose*.yml` files.
 2. **Tools → Analyze Spring Config Drift** (or right-click a config file and use the same action
    from the context menu) — required once, so there's something to show. After that, saving a
-   config file re-runs the analysis automatically.
+   config file (or moving / renaming / deleting a config file or folder) re-runs the analysis
+   automatically.
 
    ![Right-click context menu entry point](docs/images/right-click.png)
 3. Review results in the **Config Drift** tool window, or as inline highlights in the editor:
@@ -136,8 +141,10 @@ Full docs, including format-specific gotchas and an FAQ, live in the
 
      ![Suppressed tab with six dismissed findings](docs/images/suppressed.png)
    - **Key Matrix** tab — every key against every profile, searchable, with a toggle to show only
-     keys missing from at least one profile. `~` marks a cell as not applicable, when the key's
-     config system doesn't apply to that profile at all:
+     keys missing from at least one profile. `O` means set, `^` means inherited from that system's
+     `default`, `-` means missing, and `~` means not applicable (the key's config system doesn't
+     apply to that profile — including when another system's `default` would otherwise look
+     inherited):
 
      ![Key Matrix filtered to keys with a gap](docs/images/key-matrix.png)
 4. Override the partial-overlay guess per profile in **Settings → Tools → Config Drift**, if a

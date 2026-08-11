@@ -30,7 +30,12 @@ object DotenvParsing {
         return DotenvLine(key, unquote(rawValue))
     }
 
-    private fun unquote(value: String): String {
+    /**
+     * `internal`, not `private`: [DockerComposeConfigParser] reuses this for its `KEY=VALUE` list
+     * form (`- DB_HOST="localhost"`), the same env-line value syntax dotenv uses — see that class
+     * for why reimplementing it separately there caused drift false positives.
+     */
+    internal fun unquote(value: String): String {
         if (value.length < 2) return value
         val quote = value.first()
         if ((quote == '"' || quote == '\'') && value.last() == quote) {

@@ -367,6 +367,36 @@ resulting key is `enabled`, not `true.enabled` — check the **Key Matrix** or a
 a profile and confirm no `SET_NOT_DECLARED` fires for it (a `SET_NOT_DECLARED` on plain `enabled`
 would mean the prefix bug is back).
 
+## docker-compose list-form `environment:` values weren't normalized
+
+`DockerComposeConfigParser.environmentEntries()`'s `YAMLSequence` branch (Compose's list form,
+`- KEY=VALUE`) split each item on `=` by hand and used the two substrings as-is, only `.trim()`ing
+the key half. The map form (`KEY: VALUE`) branch, by contrast, reads its value through
+`YAMLScalar.textValue`, which the bundled YAML plugin already unquotes correctly — `KEY: "localhost"`
+comes back as `localhost`. List-form values got neither the trim nor the unquoting: `- KEY="localhost"`
+kept its literal `"` characters, and `- KEY= localhost` (space after `=`) kept its leading space,
+since none of that is real YAML-level quoting — the whole `KEY=VALUE` text is one plain YAML
+scalar, and the quotes/whitespace are just characters inside it once split by hand.
+
+Concretely reproducible as a false `ShapeMismatch`: `ValueShapes.ofScalar` classifies `"8080"`
+(quotes still attached) as `STRING` since it doesn't match the integer regex, but the equivalent
+map-form `APP_PORT: "8080"` reads as unquoted `8080`, which does — `TYPE_MISMATCH`/`ShapeMismatch`
+between two config files that mean the exact same numeric value, purely from which `environment:`
+syntax each one happened to use.
+
+Fixed by reusing [`DotenvParsing.unquote`][io.github.configdrift.parser.DotenvParsing] (now
+`internal` rather than `private`, specifically for this reuse) on the trimmed value half — the same
+`KEY=VALUE` env-line value syntax the `.env` parser already normalizes this same way, since Compose
+list-form entries and dotenv lines are the same convention.
+
+Not yet added to this fixture's tracked baseline counts: reproducing it would mean adding a
+list-form/map-form pair of the same key with a quoted numeric value across two docker-compose
+profiles, which shifts the numeric baselines tracked throughout this file (14 → 17 → ... above) in
+a way that needs a real analysis run to re-pin correctly, not a guess. To verify by hand: add
+`- APP_PORT="8080"` to one profile's `worker.environment` list and `APP_PORT: "8080"` to another
+profile's `worker.environment` map, then confirm **no** ShapeMismatch/TYPE_MISMATCH appears between
+them — both should read as the plain value `8080`.
+
 ## `@ConfigurationProperties` scoped to project sources, not the whole classpath
 
 Both PSI providers (`ConfigurationPropertiesContractProvider`, `KotlinConfigurationPropertiesContractProvider`)

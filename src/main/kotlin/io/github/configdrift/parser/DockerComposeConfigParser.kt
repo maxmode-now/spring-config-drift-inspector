@@ -84,7 +84,18 @@ class DockerComposeConfigParser : ConfigFileParser {
                 if (separatorIndex < 0) {
                     Triple(raw.trim(), null, anchor)
                 } else {
-                    Triple(raw.substring(0, separatorIndex).trim(), raw.substring(separatorIndex + 1), anchor)
+                    // The map form's value comes from a real YAMLScalar node, whose textValue is
+                    // already YAML-unquoted and doesn't need trimming. This list-form value is just
+                    // a substring of one bigger scalar's raw text, split on '=' by hand — without
+                    // the same normalization, `- DB_HOST="localhost"` would keep its literal quote
+                    // characters (and `- DB_HOST= localhost` its leading space) while the equivalent
+                    // `DB_HOST: "localhost"` map form correctly reads as `localhost`, producing a
+                    // spurious value drift between two config files that mean the same thing.
+                    // DotenvParsing.unquote is the same KEY=VALUE value normalization the sibling
+                    // .env parser already applies to this exact syntax.
+                    val envKey = raw.substring(0, separatorIndex).trim()
+                    val envValue = DotenvParsing.unquote(raw.substring(separatorIndex + 1).trim())
+                    Triple(envKey, envValue, anchor)
                 }
             }
             else -> emptyList()

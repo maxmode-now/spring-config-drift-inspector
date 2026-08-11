@@ -4,11 +4,22 @@
 # It downloads the CLI JAR from a GitHub Release — no need to build this repo in CI.
 #
 # When upgrading, change both the tag (`v0.2.0`) and the jar filename in the URL below.
+#
+# Optional: add `.config-drift.yml` at the repo root (fail-on, path, profiles) so the
+# check step can omit those flags; explicit CLI flags still win.
+#
+# Optionally also run with `--format markdown -o drift-report.md` if you want a human
+# report artifact in addition to Code Scanning.
 
 name: Config Drift
 
 on:
   pull_request:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
 
 jobs:
   config-drift:
@@ -28,12 +39,18 @@ jobs:
 
       - name: Check config drift
         run: |
-          java -jar config-drift-cli.jar check --path . --fail-on error --format markdown -o drift-report.md
+          java -jar config-drift-cli.jar check --path . --fail-on error --format sarif -o drift.sarif
 
-      - name: Upload report
+      - name: Upload SARIF artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: config-drift-report
-          path: drift-report.md
+          name: config-drift-sarif
+          path: drift.sarif
           if-no-files-found: ignore
+
+      - name: Upload to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: drift.sarif

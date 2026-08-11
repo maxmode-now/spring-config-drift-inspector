@@ -1,11 +1,14 @@
 package io.github.configdrift.cli
 
 import io.github.configdrift.HeadlessAnalyzer
+import io.github.configdrift.config.ConfigDriftSettingsResolver
+import io.github.configdrift.config.FailOnThreshold
 import io.github.configdrift.engine.OverlayOverrides
 import io.github.configdrift.model.DriftReport
 import io.github.configdrift.model.Severity
 import io.github.configdrift.report.JsonReportRenderer
 import io.github.configdrift.report.MarkdownReportRenderer
+import io.github.configdrift.report.SarifReportRenderer
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.system.exitProcess
@@ -51,7 +54,17 @@ class ConfigDriftCli {
     }
 
     private fun runCheck(options: Options): Int {
-        val root = options.path.toAbsolutePath().normalize()
+        val resolved = ConfigDriftSettingsResolver.resolve(
+            initialPath = options.path,
+            pathExplicit = options.pathExplicit,
+            failOnFromCli = options.failOn.takeIf { options.failOnExplicit },
+            completeFromCli = options.completeProfiles.takeIf { options.completeExplicit },
+            overlayFromCli = options.overlayProfiles.takeIf { options.overlayExplicit },
+            configFile = options.configFile,
+            useConfig = !options.noConfig,
+        )
+
+        val root = resolved.analysisRoot
         if (!root.toFile().isDirectory) {
             System.err.println("Not a directory: $root")
             return EXIT_USAGE
@@ -60,27 +73,28 @@ class ConfigDriftCli {
         val report = HeadlessAnalyzer.analyze(
             root = root,
             overlayOverrides = OverlayOverrides(
-                manualComplete = options.completeProfiles,
-                manualOverlay = options.overlayProfiles,
+                manualComplete = resolved.completeProfiles,
+                manualOverlay = resolved.overlayProfiles,
             ),
         )
 
         val rendered = when (options.format) {
             Format.JSON -> JsonReportRenderer().render(report)
             Format.MARKDOWN -> MarkdownReportRenderer().render(report)
+            Format.SARIF -> SarifReportRenderer().render(report)
         }
         print(rendered)
         options.output?.writeText(rendered)
 
-        return if (shouldFail(report, options.failOn)) EXIT_FINDINGS else EXIT_OK
+        return if (shouldFail(report, resolved.failOn)) EXIT_FINDINGS else EXIT_OK
     }
 
-    private fun shouldFail(report: DriftReport, failOn: FailOn): Boolean {
+    private fun shouldFail(report: DriftReport, failOn: FailOnThreshold): Boolean {
         val counts = report.findingsBySeverity()
         return when (failOn) {
-            FailOn.NEVER -> false
-            FailOn.ERROR -> counts.getValue(Severity.ERROR).isNotEmpty()
-            FailOn.WARNING ->
+            FailOnThreshold.NEVER -> false
+            FailOnThreshold.ERROR -> counts.getValue(Severity.ERROR).isNotEmpty()
+            FailOnThreshold.WARNING ->
                 counts.getValue(Severity.ERROR).isNotEmpty() ||
                     counts.getValue(Severity.WARNING).isNotEmpty()
         }
@@ -97,17 +111,24 @@ class ConfigDriftCli {
         }
 
         var path = Path.of(".")
+        var pathExplicit = false
         var format = Format.JSON
         var output: Path? = null
-        var failOn = FailOn.ERROR
+        var failOn = FailOnThreshold.ERROR
+        var failOnExplicit = false
         val complete = mutableSetOf<String>()
+        var completeExplicit = false
         val overlay = mutableSetOf<String>()
+        var overlayExplicit = false
+        var configFile: Path? = null
+        var noConfig = false
 
         var i = 1
         while (i < args.size) {
             when (val arg = args[i]) {
                 "--path" -> {
                     path = Path.of(requireValue(args, ++i, "--path"))
+                    pathExplicit = true
                 }
                 "--format" -> {
                     format = Format.parse(requireValue(args, ++i, "--format"))
@@ -116,13 +137,22 @@ class ConfigDriftCli {
                     output = Path.of(requireValue(args, ++i, arg))
                 }
                 "--fail-on" -> {
-                    failOn = FailOn.parse(requireValue(args, ++i, "--fail-on"))
+                    failOn = FailOnThreshold.parse(requireValue(args, ++i, "--fail-on"))
+                    failOnExplicit = true
                 }
                 "--complete-profile" -> {
                     complete += requireValue(args, ++i, "--complete-profile")
+                    completeExplicit = true
                 }
                 "--overlay-profile" -> {
                     overlay += requireValue(args, ++i, "--overlay-profile")
+                    overlayExplicit = true
+                }
+                "--config" -> {
+                    configFile = Path.of(requireValue(args, ++i, "--config"))
+                }
+                "--no-config" -> {
+                    noConfig = true
                 }
                 "--help", "-h" -> {
                     command = "help"
@@ -132,14 +162,24 @@ class ConfigDriftCli {
             i++
         }
 
+        if (noConfig && configFile != null) {
+            throw IllegalArgumentException("Use either --config or --no-config, not both")
+        }
+
         return Options(
             command = command,
             path = path,
+            pathExplicit = pathExplicit,
             format = format,
             output = output,
             failOn = failOn,
+            failOnExplicit = failOnExplicit,
             completeProfiles = complete,
+            completeExplicit = completeExplicit,
             overlayProfiles = overlay,
+            overlayExplicit = overlayExplicit,
+            configFile = configFile,
+            noConfig = noConfig,
         )
     }
 
@@ -155,13 +195,20 @@ class ConfigDriftCli {
 
             Options:
               --path DIR                 Project root to analyze (default: .)
-              --format json|markdown     Report format (default: json)
+              --format json|markdown|sarif
+                                         Report format (default: json)
               -o, --output FILE          Also write the report to FILE
               --fail-on error|warning|never
                                          Exit 1 when findings meet this severity (default: error)
               --complete-profile NAME    Treat profile as a complete environment
               --overlay-profile NAME     Treat profile as a partial overlay
+              --config FILE              Use this .config-drift.yml instead of discovering one
+              --no-config                Ignore .config-drift.yml
               -h, --help                 Show this help
+
+            Project file (optional):
+              .config-drift.yml in the analysis root may set fail-on, path, and
+              profiles.complete / profiles.overlay. Explicit CLI flags override the file.
 
             Exit codes:
               0  no findings at/above the fail-on threshold
@@ -174,34 +221,30 @@ class ConfigDriftCli {
     data class Options(
         val command: String,
         val path: Path = Path.of("."),
+        val pathExplicit: Boolean = false,
         val format: Format = Format.JSON,
         val output: Path? = null,
-        val failOn: FailOn = FailOn.ERROR,
+        val failOn: FailOnThreshold = FailOnThreshold.ERROR,
+        val failOnExplicit: Boolean = false,
         val completeProfiles: Set<String> = emptySet(),
+        val completeExplicit: Boolean = false,
         val overlayProfiles: Set<String> = emptySet(),
+        val overlayExplicit: Boolean = false,
+        val configFile: Path? = null,
+        val noConfig: Boolean = false,
     )
 
     enum class Format {
-        JSON, MARKDOWN;
+        JSON, MARKDOWN, SARIF;
 
         companion object {
             fun parse(raw: String): Format = when (raw.lowercase()) {
                 "json" -> JSON
                 "markdown", "md" -> MARKDOWN
-                else -> throw IllegalArgumentException("Unknown format: $raw (expected json|markdown)")
-            }
-        }
-    }
-
-    enum class FailOn {
-        ERROR, WARNING, NEVER;
-
-        companion object {
-            fun parse(raw: String): FailOn = when (raw.lowercase()) {
-                "error" -> ERROR
-                "warning" -> WARNING
-                "never" -> NEVER
-                else -> throw IllegalArgumentException("Unknown fail-on: $raw (expected error|warning|never)")
+                "sarif" -> SARIF
+                else -> throw IllegalArgumentException(
+                    "Unknown format: $raw (expected json|markdown|sarif)",
+                )
             }
         }
     }

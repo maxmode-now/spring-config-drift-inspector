@@ -142,8 +142,24 @@ java -jar cli/build/libs/config-drift-cli-*.jar check --path . --fail-on error
 | `1` | Findings at/above the threshold |
 | `2` | Bad arguments or unexpected failure |
 
-`--format json|markdown`, `-o FILE`, `--fail-on error|warning|never`, and
+`--format json|markdown|sarif`, `-o FILE`, `--fail-on error|warning|never`, and
 `--complete-profile` / `--overlay-profile` are supported.
+
+Use `--format sarif` to produce a SARIF 2.1.0 file for
+[GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning)
+(see the sample workflow). Optional project file `.config-drift.yml` in the analysis root
+(committed with the repo):
+
+```yaml
+fail-on: error
+path: .
+profiles:
+  complete: [prod, stage]
+  overlay: [local]
+```
+
+CLI flags override the file when present (`--config FILE` / `--no-config` also available).
+The IntelliJ plugin Settings (`.idea/configDrift.xml`) are separate and not read by the CLI.
 
 Full docs, including format-specific gotchas and an FAQ, live in the
 [wiki](https://github.com/maxmode-now/spring-config-drift-inspector/wiki).

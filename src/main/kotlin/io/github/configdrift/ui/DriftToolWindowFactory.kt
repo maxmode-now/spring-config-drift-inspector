@@ -230,7 +230,10 @@ class DriftToolWindowPanel(private val project: Project) :
         }
         val actionToolbar = ActionManager.getInstance()
             .createActionToolbar("ConfigDrift.Toolbar", group, true)
-        actionToolbar.targetComponent = findingsTable
+        // The whole tool-window panel, not findingsTable: the toolbar sits above every tab, and
+        // Copy/Rerun must keep working on Suppressed and Key Matrix. Targeting the Findings table
+        // made those actions look dead once that table was no longer the visible/focus component.
+        actionToolbar.targetComponent = this
         return JPanel(BorderLayout()).apply {
             isOpaque = false
             add(actionToolbar.component, BorderLayout.WEST)

@@ -172,6 +172,11 @@ Issues and pull requests are welcome. If you're proposing a new detection rule, 
 before/after example — false positives are taken seriously here, since a noisy inspection is one
 users turn off.
 
+## Privacy
+
+The plugin analyzes configuration locally and does not send project data to the author.
+See [PRIVACY.md](PRIVACY.md).
+
 ## License
 
 [MIT](LICENSE)

@@ -192,12 +192,23 @@ class ConfigDriftService(private val project: Project) {
                         if (project.isDisposed) return@invokeLater
                         // Discards this result if a run requested later has already published —
                         // that one reflects newer file state regardless of which finished first.
-                        if (!sequenceGate.tryPublish(sequence)) return@invokeLater
-                        publish(report)
-                        // Inspections read lastReport rather than computing anything, so they only
-                        // pick up a new result once the daemon is asked to run again. Project-wide,
-                        // because one analysis can change findings in every config file at once.
-                        DaemonCodeAnalyzer.getInstance(project).restart("Config Drift analysis finished")
+                        // onSuccess still runs even when this run loses the race: the manual
+                        // "Tools | Analyze" caller's whole point is to open the tool window once
+                        // an analysis it asked for has finished, and that should happen regardless
+                        // of whether the visible results end up being this run's or a newer
+                        // concurrent one's — the tool window always renders lastReport, which is
+                        // guaranteed to be at least as fresh either way. Gating onSuccess on
+                        // winning the publish race used to mean a save-triggered re-analysis that
+                        // happened to finish around the same time could silently swallow the
+                        // manual action's own tool-window activation.
+                        if (sequenceGate.tryPublish(sequence)) {
+                            publish(report)
+                            // Inspections read lastReport rather than computing anything, so they
+                            // only pick up a new result once the daemon is asked to run again.
+                            // Project-wide, because one analysis can change findings in every
+                            // config file at once.
+                            DaemonCodeAnalyzer.getInstance(project).restart("Config Drift analysis finished")
+                        }
                         onSuccess()
                     }
                 }

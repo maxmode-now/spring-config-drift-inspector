@@ -305,6 +305,28 @@ type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BAS
 before building the contract — caught by manual review before this was ever run-verified, which is
 exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
 
+## Manual Analyze could finish without opening the tool window
+
+`ConfigDriftService.analyzeInBackgroundAndPublish(onSuccess)` gated `onSuccess()` behind
+`sequenceGate.tryPublish(sequence)` — the same check that decides whether *this* run's results get
+published rather than a newer concurrent one's. `AnalyzeConfigDriftAction`/the tool window's Rerun
+button pass an `onSuccess` that activates the tool window, so whenever a save-triggered automatic
+re-analysis happened to publish first (a plausible race: a `2.5s`-debounced auto re-analysis and a
+manual "Tools | Analyze" started around the same time, in either order, can finish in either order),
+the manual run's own tool-window activation was silently dropped along with its publish — even
+though the user explicitly asked for an analysis and got one, just not the window they were
+expecting to see it in.
+
+Fixed by only gating `publish()`/the daemon restart on winning the race, and always calling
+`onSuccess()` once the run's own analysis has completed — the tool window renders `lastReport`
+either way, which is guaranteed to be at least as fresh regardless of which run actually published.
+
+To verify by hand (the race is timing-dependent, so this needs deliberately provoking it): edit and
+save a config file to queue an automatic re-analysis, then immediately trigger **Tools | Analyze
+Spring Config Drift** before the ~2.5s debounce fires, so both are in flight together. Confirm the
+tool window activates once the manual analysis completes, regardless of whether the automatic
+re-analysis happens to publish around the same time.
+
 ## `.env` inline inspection highlight could span the entire file
 
 `ConfigDriftInspection.checkFile()` passed `file.findElementAt(location.offset)` straight into

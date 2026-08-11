@@ -124,13 +124,18 @@ Full docs, including format-specific gotchas and an FAQ, live in the
 2. **Tools → Analyze Spring Config Drift** (or right-click a config file and use the same action
    from the context menu) — required once, so there's something to show. After that, saving a
    config file re-runs the analysis automatically.
+
+   ![Right-click context menu entry point](docs/images/right-click.png)
 3. Review results in the **Config Drift** tool window, or as inline highlights in the editor:
    - **Findings** tab — every issue, sorted by severity, with a search box and a severity filter.
      `Enter`/double-click jumps to source (or opens Settings, for a finding that's about a profile
      rather than a key); `Delete` or right-click dismisses.
-   - **Suppressed** tab — everything dismissed from Findings, restorable the same way.
+   - **Suppressed** tab — everything dismissed from Findings, restorable the same way:
+
+     ![Suppressed tab with six dismissed findings](docs/images/suppressed.png)
    - **Key Matrix** tab — every key against every profile, searchable, with a toggle to show only
-     keys missing from at least one profile:
+     keys missing from at least one profile. `~` marks a cell as not applicable, when the key's
+     config system doesn't apply to that profile at all:
 
      ![Key Matrix filtered to keys with a gap](docs/images/key-matrix.png)
 4. Override the partial-overlay guess per profile in **Settings → Tools → Config Drift**, if a

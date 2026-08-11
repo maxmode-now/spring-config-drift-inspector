@@ -1,0 +1,41 @@
+# Example: gate PRs on Spring config drift
+#
+# Copy to .github/workflows/config-drift.yml in a Spring project that uses this CLI.
+# Build the JAR from this repo (`./gradlew :cli:shadowJar`) and attach it to a release,
+# or build it in CI as shown below.
+
+name: Config Drift
+
+on:
+  pull_request:
+
+jobs:
+  config-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Option A: download a released CLI JAR
+      # - run: curl -fsSL -o config-drift-cli.jar "$CLI_JAR_URL"
+
+      # Option B: build CLI from this repository (when vendored as a submodule / monorepo)
+      - name: Build CLI
+        run: ./gradlew :cli:shadowJar
+
+      - name: Check config drift
+        run: |
+          JAR=$(ls cli/build/libs/config-drift-cli-*.jar | head -n 1)
+          java -jar "$JAR" check --path . --fail-on error --format markdown -o drift-report.md
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-drift-report
+          path: drift-report.md
+          if-no-files-found: ignore

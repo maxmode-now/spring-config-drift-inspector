@@ -114,11 +114,30 @@ the [plugin page](https://plugins.jetbrains.com/plugin/33357-spring-config-drift
 ```bash
 git clone https://github.com/maxmode-now/spring-config-drift-inspector.git
 cd spring-config-drift-inspector
-./gradlew buildPlugin
+./gradlew :spring-config-drift-inspector:buildPlugin
 ```
 
-The packaged plugin appears at `build/distributions/*.zip`. Gradle will download a JDK 21
+The packaged plugin appears at `plugin/build/distributions/*.zip`. Gradle will download a JDK 21
 toolchain automatically if one isn't already installed.
+
+### CLI (CI gate)
+
+The same analysis engine is available headless for CI:
+
+```bash
+./gradlew :cli:shadowJar
+java -jar cli/build/libs/config-drift-cli-*.jar check --path . --fail-on error
+```
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | No findings at/above the fail-on threshold (default: ERROR) |
+| `1` | Findings at/above the threshold |
+| `2` | Bad arguments or unexpected failure |
+
+`--format json|markdown`, `-o FILE`, `--fail-on error|warning|never`, and
+`--complete-profile` / `--overlay-profile` are supported. A sample GitHub Actions workflow lives
+in [`docs/examples/github-action-config-drift.yml`](docs/examples/github-action-config-drift.yml).
 
 Full docs, including format-specific gotchas and an FAQ, live in the
 [wiki](https://github.com/maxmode-now/spring-config-drift-inspector/wiki).
@@ -157,14 +176,15 @@ Full docs, including format-specific gotchas and an FAQ, live in the
 ## Development
 
 ```bash
-./gradlew test              # unit tests
-./gradlew runIde             # launch a sandbox IDE with the plugin installed
-./gradlew verifyPluginProjectConfiguration
+./gradlew test                                      # :core + plugin unit tests
+./gradlew :cli:shadowJar                            # headless CI binary
+./gradlew :spring-config-drift-inspector:runIde     # sandbox IDE with the plugin installed
+./gradlew :spring-config-drift-inspector:verifyPluginProjectConfiguration
 ```
 
 A worked example with an intentional mix of every finding type lives in
-[`testFixtures/sample-spring-project`](testFixtures/sample-spring-project), along with an
-[expected-results checklist](testFixtures/sample-spring-project/EXPECTED.md).
+[`plugin/testFixtures/sample-spring-project`](plugin/testFixtures/sample-spring-project), along with an
+[expected-results checklist](plugin/testFixtures/sample-spring-project/EXPECTED.md).
 
 ## Contributing
 

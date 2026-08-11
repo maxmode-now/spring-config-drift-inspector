@@ -6,3 +6,7 @@ plugins {
 }
 
 rootProject.name = "spring-config-drift-inspector"
+
+include("core", "cli")
+include("spring-config-drift-inspector")
+project(":spring-config-drift-inspector").projectDir = file("plugin")

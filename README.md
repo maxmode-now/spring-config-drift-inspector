@@ -83,7 +83,9 @@ new format later plugs in without reshaping the engine.
 
 ## Requirements
 
-IntelliJ Platform 2025.3 or later (IntelliJ IDEA, and any other IDE on the same platform).
+IntelliJ Platform 2025.3 or later, with the bundled Java plugin enabled (`@ConfigurationProperties`
+detection reads Java PSI directly). IntelliJ IDEA and most other IDEs on the platform ship it by
+default.
 
 ## Installation
 
@@ -112,8 +114,9 @@ Full docs, including format-specific gotchas and an FAQ, live in the
 
 1. Open a project containing `application*.yml` / `.properties`, `.env`, and/or
    `docker-compose*.yml` files.
-2. **Tools → Analyze Spring Config Drift** — required once, so there's something to show.
-   After that, saving a config file re-runs the analysis automatically.
+2. **Tools → Analyze Spring Config Drift** (or right-click a config file and use the same action
+   from the context menu) — required once, so there's something to show. After that, saving a
+   config file re-runs the analysis automatically.
 3. Review results in the **Config Drift** tool window, or as inline highlights in the editor:
    - **Findings** tab — every issue, sorted by severity, with a search box and a severity filter.
      `Enter`/double-click jumps to source (or opens Settings, for a finding that's about a profile

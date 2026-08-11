@@ -71,7 +71,11 @@ class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
         // AnnotatedElementsSearch returns Java-interop light classes for Kotlin results too —
         // bridge back to the real Kotlin PSI via KtLightClass.kotlinOrigin. A plain PsiClass here
         // means it's a Java class, handled by ConfigurationPropertiesContractProvider instead.
-        for (psiClass in AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.allScope(project)).findAll()) {
+        //
+        // projectScope, not allScope — see ConfigurationPropertiesContractProvider's identical
+        // comment: this reads a project's own classes, not every @ConfigurationProperties class on
+        // the library classpath too.
+        for (psiClass in AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()) {
             val ktClass = (psiClass as? KtLightClass)?.kotlinOrigin as? KtClass ?: continue
             val virtualFile = ktClass.containingFile.virtualFile
             if (virtualFile == null || fileIndex.isInTestSourceContent(virtualFile)) continue

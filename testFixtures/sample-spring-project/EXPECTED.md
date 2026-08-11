@@ -305,6 +305,33 @@ type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BAS
 before building the contract — caught by manual review before this was ever run-verified, which is
 exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
 
+## `@ConfigurationProperties` scoped to project sources, not the whole classpath
+
+Both PSI providers (`ConfigurationPropertiesContractProvider`, `KotlinConfigurationPropertiesContractProvider`)
+searched `AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.allScope(project))`
+— `allScope` includes every dependency jar, not just the project's own source. On a real Spring Boot
+project this would have matched Spring Boot's own built-in `@ConfigurationProperties` classes inside
+`spring-boot-autoconfigure.jar` (`ServerProperties`, `DataSourceProperties`, `JacksonProperties`, ...
+there are dozens), most of whose fields no project's own config ever sets. Every one of those would
+have surfaced as `DECLARED_NOT_SET`, exactly the kind of library-default noise both providers' own
+class KDocs say they exist to avoid ("a project's own custom properties classes").
+
+This fixture's own annotation stand-in (`ConfigurationProperties.java`, described above) happens to
+live under the fixture's own `src/`, so it never exercised the bug — a fixture with a real library
+dependency would be needed to reproduce it directly, which is why this was caught by re-reading the
+scope argument against both providers' own documented intent rather than by a fixture run.
+
+Fixed by switching the `searchPsiClasses` scope specifically to `GlobalSearchScope.projectScope(project)`
+(project sources and tests, no libraries) in both providers, while leaving the earlier
+`JavaPsiFacade.findClass(CONFIGURATION_PROPERTIES_FQN, GlobalSearchScope.allScope(project))` call
+alone — the annotation class itself genuinely does live in a library, so only *that* lookup needs
+`allScope`. `fileIndex.isInTestSourceContent(...)` still does its own job filtering out test sources,
+since `projectScope` includes them.
+
+To verify by hand once a fixture module has a real `spring-boot-autoconfigure` dependency on its
+classpath: confirm none of Spring Boot's own built-in `@ConfigurationProperties` classes contribute
+any `DECLARED_NOT_SET` findings, only classes under this project's own source roots.
+
 ## Cross-system comparison scoping — the bug this fixture caught
 
 Adding `.env` and docker-compose support to a fixture that already had Spring config exposed a

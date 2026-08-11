@@ -70,7 +70,15 @@ class ConfigurationPropertiesContractProvider : BindingContractProvider {
         // returning) and a Consumer<T> (Unit-returning) overload, and a lambda literal is
         // ambiguous between the two. The discovered class count in any real project is small
         // enough that materializing it up front costs nothing worth avoiding the ambiguity for.
-        for (psiClass in AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.allScope(project)).findAll()) {
+        //
+        // projectScope, not allScope: this provider exists to read a project's own
+        // @ConfigurationProperties classes (see the class KDoc), not every library on the
+        // classpath. allScope would also match Spring Boot's own built-in classes (ServerProperties,
+        // DataSourceProperties, ...) inside spring-boot-autoconfigure.jar, most of whose properties
+        // no project's own config ever sets — flooding DECLARED_NOT_SET with library defaults that
+        // were never meant to be compared. projectScope excludes libraries while still including
+        // test sources, which is why isInTestSourceContent below still needs its own filter.
+        for (psiClass in AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()) {
             // Kotlin classes surface here too, through their Java-interop light-class facade —
             // handled by KotlinConfigurationPropertiesContractProvider instead, which reads the
             // real Kotlin PSI rather than the light class's synthetic (and lossy: mangled types,

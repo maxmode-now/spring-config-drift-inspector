@@ -7,6 +7,7 @@ import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiFile
 import io.github.configdrift.ConfigDriftService
 import io.github.configdrift.discovery.ConfigFormats
@@ -55,16 +56,50 @@ class ConfigDriftInspection : LocalInspectionTool() {
                 if (finding.suppressible) arrayOf(SuppressFindingQuickFix(finding))
                 else LocalQuickFix.EMPTY_ARRAY
 
-            manager.createProblemDescriptor(
-                element,
-                finding.message,
-                isOnTheFly,
-                fixes,
-                highlightTypeOf(finding.severity),
-            )
+            // A YAML/Properties key's PSI element is already line-sized, so clipping to the
+            // current line is a no-op there. A format with no PSI language of its own (.env — see
+            // ParseSupport.locationOf's offset overload) parses as a single PsiPlainTextFile leaf
+            // spanning the *entire* file, so without clipping, highlighting `element` as-is would
+            // underline the whole file instead of the one line the finding is actually about.
+            val rangeInElement = lineClippedRange(file, location.offset, element.textRange)
+
+            if (rangeInElement != null) {
+                manager.createProblemDescriptor(
+                    element,
+                    rangeInElement,
+                    finding.message,
+                    highlightTypeOf(finding.severity),
+                    isOnTheFly,
+                    *fixes,
+                )
+            } else {
+                manager.createProblemDescriptor(
+                    element,
+                    finding.message,
+                    isOnTheFly,
+                    fixes,
+                    highlightTypeOf(finding.severity),
+                )
+            }
         }
 
         return descriptors.takeIf { it.isNotEmpty() }?.toTypedArray()
+    }
+
+    /**
+     * The finding's offset clipped to its own line, and expressed relative to [elementRange] as
+     * `createProblemDescriptor`'s `rangeInElement` parameter requires — `null` when the line and
+     * the element don't overlap at all (shouldn't happen given `offset` is inside `elementRange`
+     * by construction, but `findElementAt` guarantees only that, not line alignment) or when the
+     * intersection is empty, in which case the caller falls back to highlighting the whole element
+     * rather than nothing.
+     */
+    private fun lineClippedRange(file: PsiFile, offset: Int, elementRange: TextRange): TextRange? {
+        val document = file.viewProvider.document ?: return null
+        val lineIndex = document.getLineNumber(offset)
+        val lineRange = TextRange(document.getLineStartOffset(lineIndex), document.getLineEndOffset(lineIndex))
+        val clipped = lineRange.intersection(elementRange) ?: return null
+        return clipped.takeUnless { it.isEmpty }?.shiftLeft(elementRange.startOffset)
     }
 
     private fun highlightTypeOf(severity: Severity): ProblemHighlightType = when (severity) {

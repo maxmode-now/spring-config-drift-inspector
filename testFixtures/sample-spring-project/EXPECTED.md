@@ -305,6 +305,26 @@ type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BAS
 before building the contract — caught by manual review before this was ever run-verified, which is
 exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
 
+## `.env` inline inspection highlight could span the entire file
+
+`ConfigDriftInspection.checkFile()` passed `file.findElementAt(location.offset)` straight into
+`createProblemDescriptor`, so the whole returned PSI element gets underlined. For YAML/Properties
+that element is already key-sized. But `.env` has no PSI language of its own (see
+`ParseSupport.locationOf`'s offset overload) — it parses as a single `PsiPlainTextFile` leaf
+spanning the *entire file*, so `findElementAt` returns that one leaf for every offset in the file,
+and the inline highlight would underline the whole `.env` file instead of the one line the finding
+is actually about.
+
+Fixed by computing a `rangeInElement` clipped to the offset's own line (via
+`Document.getLineStartOffset`/`getLineEndOffset`, intersected with the element's own range,
+shifted to be relative to the element) and passing it through the `createProblemDescriptor(element,
+rangeInElement, ...)` overload. This is a no-op for the already line-sized YAML/Properties case and
+bounds the highlight to one line for `.env`.
+
+To verify by hand: open `.env.staging` in the sandbox editor with an on-the-fly analysis result
+present, and confirm the `DB_PASSWORD` SecretExposure squiggly underlines only the
+`DB_PASSWORD=devpassword123` line — not the whole file.
+
 ## Kotlin annotation prefix misread from a non-prefix single argument
 
 `prefixOf()`'s `argumentText()` helper fell back to `annotation.valueArguments.singleOrNull()`

@@ -62,4 +62,32 @@ class StructuralConflictTest {
         assertFalse(StructuralConflict.isCoveredBy(NormalizedKey("app.cachesize"), conflicts))
         assertFalse(StructuralConflict.isCoveredBy(NormalizedKey("app.other"), conflicts))
     }
+
+    @Test
+    fun `a scalar in one profile and a list of objects in another is a conflict`() {
+        // YamlConfigParser joins indexes as app.items[0].name — no '.' before '['.
+        val conflicts = StructuralConflict.detect(
+            mapOf(
+                ProfileId("dev") to keys("app.items"),
+                ProfileId("prod") to keys("app.items[0].name", "app.items[0].weight"),
+            ),
+        )
+        assertEquals(keys("app.items"), conflicts)
+    }
+
+    @Test
+    fun `indexed children of a conflicting key are covered so they are not reported twice`() {
+        val conflicts = keys("app.items")
+        assertTrue(StructuralConflict.isCoveredBy(NormalizedKey("app.items[0].name"), conflicts))
+        assertTrue(StructuralConflict.isCoveredBy(NormalizedKey("app.items[1].name"), conflicts))
+        assertFalse(StructuralConflict.isCoveredBy(NormalizedKey("app.itemsExtra[0]"), conflicts))
+    }
+
+    @Test
+    fun `isChildOf requires a property boundary after the parent`() {
+        assertTrue(StructuralConflict.isChildOf("app.cache", "app.cache.host"))
+        assertTrue(StructuralConflict.isChildOf("app.items", "app.items[0].name"))
+        assertFalse(StructuralConflict.isChildOf("app.cache", "app.cachesize"))
+        assertFalse(StructuralConflict.isChildOf("app.items", "app.itemsExtra[0]"))
+    }
 }

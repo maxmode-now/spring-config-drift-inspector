@@ -34,9 +34,11 @@ import org.jetbrains.kotlin.psi.KtUserType
  *
  * The direct consequence: recursing into a nested custom type only works when that type is
  * **declared in the same file** as the `@ConfigurationProperties` class. A type imported from
- * elsewhere can't be told apart from an unrecognized library type without resolving it, so both
- * are treated the same way this provider treats anything else it can't classify — as a leaf, not
- * guessed at further.
+ * elsewhere can't be told apart from an unrecognized library type without resolving it, so it is
+ * skipped rather than registered as a leaf — a leaf would make [MetadataContractAnalyzer] report
+ * DECLARED_NOT_SET whenever only nested children are set in config (the usual pattern). Child
+ * paths like `app.server.database.url` still surface as SET_NOT_DECLARED, which is the visible
+ * signal of this same-file limitation.
  */
 class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
 
@@ -149,16 +151,20 @@ class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
                 continue
             }
             if (ConfigurationPropertyTypes.isKnownLeafOrContainerSimpleName(simpleName)) {
-                contracts[key] = leafContract(key, javaEquivalentTypeText(userType, simpleName))
+                contracts[key] = leafContract(key, javaEquivalentTypeText(userType))
                 continue
             }
 
             val nestedClass = findClassInSameFile(ktClass, simpleName)
             if (nestedClass != null) {
                 collectInto(contracts, key.value, nestedClass, visited, depth + 1)
-            } else {
-                contracts[key] = leafContract(key, typeReference.text)
             }
+            // Cross-file / unresolved custom types: do *not* register a leaf contract.
+            // Treating `database: DatabaseSettings` as a scalar declaration produced
+            // DECLARED_NOT_SET on `app.server.database` whenever only children
+            // (`app.server.database.url`) were set — noise, not a real gap. Omitting the
+            // contract keeps SET_NOT_DECLARED on those children (the documented same-file
+            // limitation) without the parent INFO finding.
         }
     }
 
@@ -170,22 +176,27 @@ class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
     )
 
     /**
-     * Translates the base type name to its Java equivalent via
-     * [ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES] — see that map's KDoc for why
-     * reporting Kotlin's own spelling would silently defeat
-     * [io.github.configdrift.engine.MetadataContractAnalyzer]'s type checks. Only the base name
-     * needs translating: that analyzer discards everything from `<` onward when matching against
-     * its fixed type-name sets, so the generic argument text only needs to be *preserved* for
-     * display, not translated too. [userType]'s own text is used rather than the full
-     * [KtTypeReference]'s, specifically so a nullable declaration's trailing `?` (which belongs to
-     * the outer `KtNullableType`, not this inner element) can't leak into the result and break the
-     * exact-string match the same way the untranslated Kotlin name would have.
+     * Recursively translates [userType] to a Java-FQN-style declaredType via
+     * [ConfigurationPropertyTypes.javaEquivalentDeclaredType] — see that function and
+     * [ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES] for why Kotlin's own spelling
+     * would silently defeat [io.github.configdrift.engine.MetadataContractAnalyzer]'s type checks.
+     *
+     * Uses [KtUserType.referencedName] for the base (ignoring any qualifier) and walks
+     * [KtUserType.typeArgumentList] for arguments, so a declaration written as
+     * `kotlin.collections.List<Int>` becomes `java.util.List<java.lang.Integer>` rather than
+     * concatenating a mangled `removePrefix` of the full qualified text. Nullable wrappers on
+     * the outer type or on arguments are stripped by [unwrapToUserType] before translation, so a
+     * trailing `?` never leaks into the exact-string match.
      */
-    private fun javaEquivalentTypeText(userType: KtUserType, simpleName: String): String {
-        val javaBase = ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES[simpleName]
-            ?: return userType.text
-        val genericSuffix = userType.text.removePrefix(simpleName)
-        return javaBase + genericSuffix
+    private fun javaEquivalentTypeText(userType: KtUserType): String {
+        val simpleName = userType.referencedName ?: return userType.text
+        val translatedArgs = userType.typeArgumentList?.arguments.orEmpty().map { projection ->
+            val typeRef = projection.typeReference
+                ?: return@map projection.text
+            val inner = unwrapToUserType(typeRef)
+            if (inner != null) javaEquivalentTypeText(inner) else typeRef.text
+        }
+        return ConfigurationPropertyTypes.javaEquivalentDeclaredType(simpleName, translatedArgs)
     }
 
     /** Unwraps a `Type?` nullable annotation to reach the underlying [KtUserType], if any. */

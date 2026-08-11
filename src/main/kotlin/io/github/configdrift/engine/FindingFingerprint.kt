@@ -34,6 +34,6 @@ object FindingFingerprint {
             "UnresolvedPlaceholder:${finding.key}:${finding.profile}:${finding.placeholder}"
         is MetadataContractMismatch ->
             "MetadataContractMismatch:${finding.key}:${finding.kind}:${finding.profile ?: ""}"
-        is OverlayProfileExcluded -> "OverlayProfileExcluded:${finding.profile}"
+        is OverlayProfileExcluded -> "OverlayProfileExcluded:${finding.profile}:${finding.domain}"
     }
 }

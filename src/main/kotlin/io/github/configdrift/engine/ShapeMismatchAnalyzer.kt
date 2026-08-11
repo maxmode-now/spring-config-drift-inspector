@@ -47,15 +47,16 @@ class ShapeMismatchAnalyzer : DriftAnalyzer {
     }
 
     /**
-     * Reports keys that are a plain value in one profile and a nested object in another.
+     * Reports keys that are a plain value in one profile and a nested object / list in another.
      *
      * The container side has no entry of its own to read a shape from — flattening only produced
-     * its children — so its occurrence is synthesised as [ValueShape.MAP] and anchored at the
-     * first child key, which is the nearest thing the user can navigate to.
+     * its children — so its occurrence is synthesised as [ValueShape.MAP] or [ValueShape.LIST]
+     * (list-of-object children use `[n]` with no leading dot; see [StructuralConflict.isChildOf])
+     * and anchored at the first child key, which is the nearest thing the user can navigate to.
      */
     private fun structuralFindings(context: AnalysisContext): List<Finding> =
         context.structurallyConflictingKeys.mapNotNull { key ->
-            val prefix = key.value + "."
+            val parent = key.value
             val occurrences = context.snapshot.profiles.mapNotNull { profileSnapshot ->
                 val leaf = profileSnapshot.byKey[key]
                 if (leaf != null) {
@@ -66,18 +67,23 @@ class ShapeMismatchAnalyzer : DriftAnalyzer {
                     )
                 }
                 val firstChild = profileSnapshot.entries
-                    .filter { it.key.value.startsWith(prefix) }
+                    .filter { StructuralConflict.isChildOf(parent, it.key.value) }
                     .minByOrNull { it.key.value }
                     ?: return@mapNotNull null
 
                 ShapeMismatch.Occurrence(
                     profile = profileSnapshot.profile,
-                    shape = ValueShape.MAP,
+                    shape = containerShape(parent, firstChild.key.value),
                     location = firstChild.location,
                 )
             }
             if (occurrences.size < 2) null else ShapeMismatch(key = key, occurrences = occurrences)
         }
+
+    /** Indexed children (`parent[0]…`) are a list container; dotted children are a map. */
+    private fun containerShape(parent: String, childKey: String): ValueShape =
+        if (childKey.startsWith("$parent[")) ValueShape.LIST else ValueShape.MAP
+
 
     private fun isConsistent(shapes: List<ValueShape>): Boolean {
         val distinct = shapes.toSet()

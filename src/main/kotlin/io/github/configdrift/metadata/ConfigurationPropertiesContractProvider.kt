@@ -242,6 +242,12 @@ object ConfigurationPropertyTypes {
      * Java-side counterpart in those checked sets are here — `String`, `Duration`, and the other
      * common value types are absent on purpose, matching [MetadataContractAnalyzer]'s own
      * documented behavior of skipping them for *any* provider, Java included.
+     *
+     * Both the base name *and* type-argument names must be translated (see
+     * [javaEquivalentDeclaredType]): the analyzer only looks at the base when classifying a
+     * container, but for indexed keys (`hosts[0]`) it extracts the element type from the generic
+     * argument string and matches that against the same sets — leaving `"Int"` inside
+     * `java.util.List<Int>` would still silence element `TYPE_MISMATCH`.
      */
     val KOTLIN_TO_JAVA_BASE_TYPE_NAMES: Map<String, String> = mapOf(
         "Boolean" to "java.lang.Boolean",
@@ -265,4 +271,27 @@ object ConfigurationPropertyTypes {
         "SortedMap" to "java.util.SortedMap",
         "Properties" to "java.util.Properties",
     )
+
+    /**
+     * Builds a Java-FQN-style [io.github.configdrift.spi.KeyContract.declaredType] from a Kotlin
+     * simple base name and already-translated type-argument declaredTypes.
+     *
+     * Unmapped bases (`String`, `Duration`, …) keep the simple name rather than a qualified
+     * `userType.text`, so a declaration written as `kotlin.String` still yields `String`. Type
+     * arguments are supplied by the caller after recursive translation — this function itself is
+     * pure string assembly so it can be unit-tested without a Kotlin PSI fixture.
+     */
+    fun javaEquivalentDeclaredType(
+        baseSimpleName: String,
+        typeArgumentDeclaredTypes: List<String> = emptyList(),
+    ): String {
+        val javaBase = KOTLIN_TO_JAVA_BASE_TYPE_NAMES[baseSimpleName] ?: baseSimpleName
+        if (typeArgumentDeclaredTypes.isEmpty()) return javaBase
+        return buildString {
+            append(javaBase)
+            append('<')
+            append(typeArgumentDeclaredTypes.joinToString(", "))
+            append('>')
+        }
+    }
 }

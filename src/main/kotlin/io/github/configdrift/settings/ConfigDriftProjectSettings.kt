@@ -24,7 +24,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
  * The [State.manualComplete] / [State.manualOverlay] / [State.suppressedFindingIds] sets are
  * plain `MutableSet`s, mutated on the EDT (Settings|Apply, the suppress/un-suppress actions) and
  * read while an analysis runs on a background `Task.Backgroundable` thread
- * ([io.github.configdrift.engine.AnalysisContext.overlayProfiles],
+ * ([io.github.configdrift.engine.AnalysisContext.overlayByDomain],
  * [io.github.configdrift.ConfigDriftService]'s suppression filtering). Neither `LinkedHashSet`
  * (Kotlin's `mutableSetOf()`) nor `HashSet` tolerates a write on one thread racing a read on
  * another — the practical failure mode is a `ConcurrentModificationException` thrown out of the

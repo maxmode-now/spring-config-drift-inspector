@@ -168,7 +168,8 @@ data class MetadataContractMismatch(
 }
 
 /**
- * A profile was judged to be a partial overlay and left out of missing-key comparison.
+ * A profile was judged to be a partial overlay *for one config system* and left out of
+ * missing-key comparison for that system's keys.
  *
  * Reported rather than applied silently, and this is the whole point of the finding: a profile
  * that sets very few keys is *usually* an overlay meant to be activated alongside another
@@ -176,9 +177,13 @@ data class MetadataContractMismatch(
  * missing most of its configuration — which is exactly the defect this plugin exists to catch.
  * Since the files themselves cannot distinguish the two, the guess is made visible so the user
  * can overrule it.
+ *
+ * Exclusion is per [domain]: a profile that is sparse only in Docker Compose stays in play for
+ * `.env` MissingKey checks, and vice versa.
  */
 data class OverlayProfileExcluded(
     val profile: ProfileId,
+    val domain: ConfigDomain,
     val keyCount: Int,
     val typicalKeyCount: Int,
     /** True when the user marked this profile as an overlay in settings, rather than a guess. */
@@ -189,11 +194,11 @@ data class OverlayProfileExcluded(
     override val location: SourceLocation? = null
     override val message: String = if (manual) {
         "Profile '$profile' is marked as a partial overlay in Config Drift settings, so it is " +
-            "excluded from missing-key comparison"
+            "excluded from missing-key comparison for ${domain.displayName} keys"
     } else {
-        "Profile '$profile' sets $keyCount of ~$typicalKeyCount keys and was treated as a " +
-            "partial overlay, so it is excluded from missing-key comparison " +
-            "(override this in Settings | Tools | Config Drift)"
+        "Profile '$profile' sets $keyCount of ~$typicalKeyCount ${domain.displayName} keys and " +
+            "was treated as a partial overlay, so it is excluded from missing-key comparison " +
+            "for that system (override this in Settings | Tools | Config Drift)"
     }
 }
 

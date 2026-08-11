@@ -83,16 +83,15 @@ class MetadataContractAnalyzer : DriftAnalyzer {
             .filter { it.domain == ConfigDomain.SPRING }
             .mapTo(mutableSetOf()) { stripIndices(it.key) }
         for (key in declared) {
-            if (key !in setKeys) {
-                findings += MetadataContractMismatch(
-                    key = key,
-                    kind = MetadataContractMismatch.Kind.DECLARED_NOT_SET,
-                    location = null,
-                    profile = null,
-                    declaredType = context.contractFor(key)?.declaredType,
-                    actualShape = null,
-                )
-            }
+            if (isDeclaredKeySatisfied(key, setKeys)) continue
+            findings += MetadataContractMismatch(
+                key = key,
+                kind = MetadataContractMismatch.Kind.DECLARED_NOT_SET,
+                location = null,
+                profile = null,
+                declaredType = context.contractFor(key)?.declaredType,
+                actualShape = null,
+            )
         }
         return findings
     }
@@ -168,23 +167,34 @@ class MetadataContractAnalyzer : DriftAnalyzer {
     private fun NormalizedKey.isChildOf(prefix: NormalizedKey): Boolean =
         value.startsWith(prefix.value + ".")
 
-    private companion object {
-        val INDEX = Regex("""\[[^]]*]""")
+    companion object {
+        /**
+         * True when [declared] itself appears in config, or any nested / indexed child of it does.
+         *
+         * Nested YAML for a Map (or an unresolved Kotlin nested type that used to be registered
+         * as a scalar leaf) only produces child keys — without this check the parent would get a
+         * spurious DECLARED_NOT_SET even though the binding is clearly in use.
+         */
+        fun isDeclaredKeySatisfied(declared: NormalizedKey, setKeys: Set<NormalizedKey>): Boolean =
+            declared in setKeys ||
+                setKeys.any { StructuralConflict.isChildOf(declared.value, it.value) }
 
-        val INTEGER_TYPES = setOf(
+        private val INDEX = Regex("""\[[^]]*]""")
+
+        private val INTEGER_TYPES = setOf(
             "int", "long", "short", "byte",
             "java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte",
             "java.math.BigInteger",
         )
-        val DECIMAL_TYPES = setOf(
+        private val DECIMAL_TYPES = setOf(
             "double", "float",
             "java.lang.Double", "java.lang.Float", "java.math.BigDecimal",
         )
-        val BOOLEAN_TYPES = setOf("boolean", "java.lang.Boolean")
-        val COLLECTION_TYPES = setOf(
+        private val BOOLEAN_TYPES = setOf("boolean", "java.lang.Boolean")
+        private val COLLECTION_TYPES = setOf(
             "java.util.List", "java.util.Set", "java.util.Collection", "java.util.SortedSet",
         )
-        val MAP_TYPES = setOf(
+        private val MAP_TYPES = setOf(
             "java.util.Map", "java.util.SortedMap", "java.util.Properties",
         )
     }

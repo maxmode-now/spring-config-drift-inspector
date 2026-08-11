@@ -83,6 +83,7 @@ class JsonReportRenderer : ReportRenderer {
             )
             is OverlayProfileExcluded -> listOf(
                 """"profile": ${quote(finding.profile.name)}""",
+                """"domain": ${quote(finding.domain.name)}""",
                 """"keyCount": ${finding.keyCount}""",
                 """"typicalKeyCount": ${finding.typicalKeyCount}""",
                 """"manual": ${finding.manual}""",

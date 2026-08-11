@@ -84,4 +84,54 @@ class KotlinConfigurationPropertyTypesTest {
         assertFalse("String" in ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES)
         assertFalse("Duration" in ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES)
     }
+
+    @Test
+    fun `javaEquivalentDeclaredType translates a scalar kotlin base name`() {
+        assertEquals(
+            "java.lang.Integer",
+            ConfigurationPropertyTypes.javaEquivalentDeclaredType("Int"),
+        )
+    }
+
+    @Test
+    fun `javaEquivalentDeclaredType translates list element types for indexed mismatch checks`() {
+        assertEquals(
+            "java.util.List<java.lang.Integer>",
+            ConfigurationPropertyTypes.javaEquivalentDeclaredType(
+                "List",
+                listOf("java.lang.Integer"),
+            ),
+        )
+    }
+
+    @Test
+    fun `javaEquivalentDeclaredType translates map value types`() {
+        assertEquals(
+            "java.util.Map<String, java.lang.Boolean>",
+            ConfigurationPropertyTypes.javaEquivalentDeclaredType(
+                "Map",
+                listOf("String", "java.lang.Boolean"),
+            ),
+        )
+    }
+
+    @Test
+    fun `javaEquivalentDeclaredType keeps unmapped simple names instead of qualified text`() {
+        assertEquals("String", ConfigurationPropertyTypes.javaEquivalentDeclaredType("String"))
+        assertEquals(
+            "java.util.List<String>",
+            ConfigurationPropertyTypes.javaEquivalentDeclaredType("List", listOf("String")),
+        )
+    }
+
+    @Test
+    fun `javaEquivalentDeclaredType preserves already-translated nested arguments`() {
+        assertEquals(
+            "java.util.List<java.util.List<java.lang.Integer>>",
+            ConfigurationPropertyTypes.javaEquivalentDeclaredType(
+                "List",
+                listOf("java.util.List<java.lang.Integer>"),
+            ),
+        )
+    }
 }

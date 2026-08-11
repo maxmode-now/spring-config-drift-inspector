@@ -8,7 +8,8 @@ import io.github.configdrift.parser.Placeholders
  *
  * [committedValue] matters for masking: for `${DB_PASSWORD:changeme}` the committed secret is
  * `changeme`, not the 23-character placeholder expression. Reporting the expression's length made
- * the masked hint misleading.
+ * the masked hint misleading. The same materialization applies inside larger strings (e.g. a JDBC
+ * URL whose user/password segments are placeholders).
  */
 data class SecretMatch(
     val rule: SecretRule,
@@ -35,14 +36,9 @@ class SecretDetector(rules: List<SecretRule> = SecretRules.DEFAULTS) {
         val value = rawValue?.trim().orEmpty()
         if (value.isBlank()) return null
 
-        // What gets committed to the repository is the only thing worth flagging.
-        val committed = wholeValuePlaceholder(value)
-            ?.let { reference ->
-                // `${DB_PASSWORD}` and `${DB_PASSWORD:}` both externalize the value — the second
-                // just falls back to empty. Neither ships a credential, so neither is a finding.
-                reference.defaultValue?.takeIf { it.isNotBlank() } ?: return null
-            }
-            ?: value
+        // What gets committed to the repository is the only thing worth flagging — including
+        // placeholder defaults embedded in a larger string (JDBC URLs, etc.).
+        val committed = Placeholders.materializeCommitted(value) ?: return null
 
         val rule = orderedRules.firstOrNull { rule ->
             val keyMatches = rule.keyPattern?.containsMatchIn(key.value) ?: false
@@ -56,8 +52,4 @@ class SecretDetector(rules: List<SecretRule> = SecretRules.DEFAULTS) {
 
         return SecretMatch(rule, committed)
     }
-
-    /** The single placeholder that makes up the entire value, if that is what this value is. */
-    private fun wholeValuePlaceholder(value: String) =
-        Placeholders.parse(value).singleOrNull()?.takeIf { it.raw == value }
 }

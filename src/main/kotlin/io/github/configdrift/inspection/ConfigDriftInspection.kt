@@ -88,18 +88,19 @@ class ConfigDriftInspection : LocalInspectionTool() {
 
     /**
      * The finding's offset clipped to its own line, and expressed relative to [elementRange] as
-     * `createProblemDescriptor`'s `rangeInElement` parameter requires — `null` when the line and
-     * the element don't overlap at all (shouldn't happen given `offset` is inside `elementRange`
-     * by construction, but `findElementAt` guarantees only that, not line alignment) or when the
-     * intersection is empty, in which case the caller falls back to highlighting the whole element
-     * rather than nothing.
+     * `createProblemDescriptor`'s `rangeInElement` parameter requires — `null` when the document
+     * is unavailable, or when [InspectionHighlightRanges.lineClippedRangeInElement] finds no
+     * overlap, in which case the caller falls back to highlighting the whole element rather than
+     * nothing.
      */
     private fun lineClippedRange(file: PsiFile, offset: Int, elementRange: TextRange): TextRange? {
         val document = file.viewProvider.document ?: return null
         val lineIndex = document.getLineNumber(offset)
-        val lineRange = TextRange(document.getLineStartOffset(lineIndex), document.getLineEndOffset(lineIndex))
-        val clipped = lineRange.intersection(elementRange) ?: return null
-        return clipped.takeUnless { it.isEmpty }?.shiftLeft(elementRange.startOffset)
+        return InspectionHighlightRanges.lineClippedRangeInElement(
+            lineStart = document.getLineStartOffset(lineIndex),
+            lineEnd = document.getLineEndOffset(lineIndex),
+            elementRange = elementRange,
+        )
     }
 
     private fun highlightTypeOf(severity: Severity): ProblemHighlightType = when (severity) {

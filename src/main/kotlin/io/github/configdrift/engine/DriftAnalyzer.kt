@@ -1,6 +1,7 @@
 package io.github.configdrift.engine
 
 import com.intellij.openapi.project.Project
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ConfigSnapshot
 import io.github.configdrift.model.Finding
 import io.github.configdrift.model.NormalizedKey
@@ -41,39 +42,41 @@ class AnalysisContext(
         snapshot.profileIds.filter { it != ProfileId.DEFAULT }
 
     /**
-     * Profiles that set so few keys they are almost certainly overlays applied on top of another
-     * profile, not standalone environments.
+     * Per-profile, per-domain overlay verdicts.
      *
-     * Spring allows several profiles to be active at once, so a file setting three keys is a
-     * perfectly normal overlay — but it is indistinguishable, from the files alone, from an
-     * environment that forgot everything else. The automatic guess ([OverlayHeuristic]) can be
-     * overridden per-profile in project settings; either way, every exclusion is reported by
+     * A profile that sets very few keys of one config system is *usually* an overlay for that
+     * system — but the same profile may still be a complete environment in another system.
+     * [OverlayHeuristic.classifyByDomain] walks each [ConfigDomain] separately; [isOverlayFor]
+     * applies that distinction when MissingKey skips profiles.
+     *
+     * Manual overrides from project settings still win, and every exclusion is reported by
      * [OverlayProfileAnalyzer] rather than applied silently.
      */
-    val overlayProfiles: Map<ProfileId, OverlayHeuristic.Verdict> by lazy {
+    val overlayByDomain: Map<ProfileId, Map<ConfigDomain, OverlayHeuristic.Verdict>> by lazy {
         // manualClassification() hands back a private copy rather than a live reference into
         // settings — this runs on a background analysis thread, while the EDT can be mutating
         // the same sets via Settings|Apply or a suppress/un-suppress action at any moment.
         val classification = ConfigDriftProjectSettings.getInstance(project).manualClassification()
-
-        // Judged within each config system separately: "sets far fewer keys than its peers" only
-        // means anything against comparable peers. A four-variable `.env.prod` measured against
-        // Spring profiles setting thirty properties each would be called a partial overlay and
-        // dropped from missing-key comparison entirely, hiding every real gap in it.
-        comparableProfiles
-            .groupBy { snapshot.profile(it)?.domains.orEmpty() }
-            .flatMap { (_, peers) ->
-                val counts = peers.associateWith { snapshot.profile(it)?.keys?.size ?: 0 }
-                OverlayHeuristic
-                    .classify(counts, classification.manualComplete, classification.manualOverlay)
-                    .entries
-            }
-            .associate { it.key to it.value }
+        OverlayHeuristic.classifyByDomain(
+            profiles = comparableProfiles.mapNotNull { snapshot.profile(it) },
+            manualComplete = classification.manualComplete,
+            manualOverlay = classification.manualOverlay,
+        )
     }
 
-    /** The profiles missing-key comparison actually runs across. */
-    val completeProfiles: List<ProfileId> by lazy {
-        comparableProfiles.filterNot { it in overlayProfiles }
+    /**
+     * True when [profile] should be skipped for MissingKey on [key].
+     *
+     * The profile must be an overlay for **every** domain of [key] that it actually uses — so a
+     * Compose-only overlay still participates in `.env` comparisons for the same profile name.
+     */
+    fun isOverlayFor(profile: ProfileId, key: NormalizedKey): Boolean {
+        val keyDomains = snapshot.domainsByKey[key] ?: return false
+        val profileDomains = snapshot.profile(profile)?.domains ?: return false
+        val relevant = keyDomains.intersect(profileDomains)
+        if (relevant.isEmpty()) return false
+        val overlays = overlayByDomain[profile] ?: return false
+        return relevant.all { it in overlays }
     }
 
     /**

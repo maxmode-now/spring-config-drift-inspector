@@ -9,6 +9,7 @@ import com.intellij.openapi.vfs.VirtualFileVisitor
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import io.github.configdrift.discovery.ConfigFormats
 
@@ -29,31 +30,31 @@ import io.github.configdrift.discovery.ConfigFormats
 class ConfigFileChangeListener : BulkFileListener {
 
     /**
-     * Populated by [before] for a directory-delete event whose contents (checked while the VFS
-     * tree still existed) included a config file — see [before]'s KDoc for why that check can't
-     * happen in [after]. `before`/`after` are always called back to back, synchronously, for the
-     * same event batch, on the same thread, so a plain field is enough; no two batches ever
-     * overlap here.
+     * Populated by [before] for structural VFS events that [after] cannot attribute to a project
+     * (or to a config file) on path basename alone — see [before]'s KDoc.
+     * `before`/`after` are always called back to back, synchronously, for the same event batch,
+     * on the same thread, so a plain field is enough; no two batches ever overlap here.
      */
-    private var projectsFromDeletedConfigDirs: Set<Project> = emptySet()
+    private var projectsFromStructuralChanges: Set<Project> = emptySet()
 
     /**
-     * A directory being deleted loses its children the moment the delete is applied — [after]
-     * would see only that *something* named e.g. `resources` disappeared, with no way left to ask
-     * whether it used to contain an `application-prod.yml`. `before` fires while the tree is still
-     * intact, so it's the only place a whole-directory delete can be recognised as config-relevant
-     * at all; `nameLooksLikeConfig`'s basename check alone would silently ignore it, since a
-     * directory's own name is never a config file name.
+     * Captures owning projects while the VFS tree (and project membership) are still intact.
      *
-     * Filtered to [VFileDeleteEvent] first, same reasoning as [nameLooksLikeConfig]: this method
-     * runs for every event in a batch that can be tens of thousands large, so the recursive child
-     * walk below must stay reachable only by the rare directory-delete case, not by every event.
+     * Three cases [nameLooksLikeConfig] misses or [after] cannot resolve reliably:
+     *  - **Directory delete / move / rename** — VFS emits one event for the directory; its
+     *    basename is never a config file name, and children are not listed separately. Delete
+     *    also removes children before [after], so the walk must happen here.
+     *  - **Config file move / rename (and delete)** — [after]'s [ProjectLocator] lookup can
+     *    fail once the file has left the project (or been deleted), so the project is recorded
+     *    while membership is still known.
+     *
+     * Filtered to delete / move / rename first: this method runs for every event in a batch that
+     * can be tens of thousands large, so the recursive child walk must stay reachable only by
+     * those rare structural cases, not by every content-change event.
      */
     override fun before(events: List<VFileEvent>) {
-        projectsFromDeletedConfigDirs = events.asSequence()
-            .filterIsInstance<VFileDeleteEvent>()
-            .mapNotNull { it.file }
-            .filter { it.isDirectory && containsConfigFile(it) }
+        projectsFromStructuralChanges = events.asSequence()
+            .mapNotNull(::fileForStructuralCapture)
             .flatMap { ProjectLocator.getInstance().getProjectsForFile(it).asSequence() }
             .filterNotNull()
             .toSet()
@@ -66,13 +67,34 @@ class ConfigFileChangeListener : BulkFileListener {
             .mapNotNull { it.file }
             .flatMap { ProjectLocator.getInstance().getProjectsForFile(it).asSequence() }
             .filterNotNull()
-            .toSet() + projectsFromDeletedConfigDirs
-        projectsFromDeletedConfigDirs = emptySet()
+            .toSet() + projectsFromStructuralChanges
+        projectsFromStructuralChanges = emptySet()
 
         for (project in affectedProjects) {
             if (!project.isDisposed) {
                 project.service<ConfigDriftService>().requestReanalysis()
             }
+        }
+    }
+
+    /**
+     * The file whose project(s) must be remembered in [before], or null when this event is
+     * irrelevant to config drift.
+     */
+    private fun fileForStructuralCapture(event: VFileEvent): VirtualFile? {
+        val file = when (event) {
+            is VFileDeleteEvent, is VFileMoveEvent -> event.file
+            is VFilePropertyChangeEvent -> if (event.isRename) event.file else null
+            else -> null
+        } ?: return null
+
+        return when {
+            file.isDirectory -> file.takeIf { containsConfigFile(it) }
+            ConfigFormats.isKnownConfigFile(file.name) -> file
+            // Renamed *into* a config name: old basename is not config, but the project still
+            // needs capturing if [after] cannot resolve membership after the rename.
+            event is VFilePropertyChangeEvent && isConfigPath(event.newPath) -> file
+            else -> null
         }
     }
 

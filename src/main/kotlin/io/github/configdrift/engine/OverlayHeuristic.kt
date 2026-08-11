@@ -1,6 +1,8 @@
 package io.github.configdrift.engine
 
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ProfileId
+import io.github.configdrift.model.ProfileSnapshot
 
 /**
  * Decides which profiles are partial overlays, pure and settings-agnostic so it is testable
@@ -37,6 +39,41 @@ object OverlayHeuristic {
             if (!isOverlay) return@mapNotNull null
             profile to Verdict(count, typical, manual = profile.name in manualOverlay)
         }.toMap()
+    }
+
+    /**
+     * Classifies overlays **per config system**, using only that system's key counts.
+     *
+     * Grouping by exact [io.github.configdrift.model.ProfileSnapshot.domains] set equality was
+     * too strict: `staging` with `{DOTENV, DOCKER_COMPOSE}` never peered with `production` that
+     * only had `{DOTENV}`, so a sparse multi-domain profile could never be auto-detected.
+     * Walking each [ConfigDomain] separately — and counting only entries of that domain — matches
+     * the original intent (don't compare a four-variable `.env` against Spring's thirty keys)
+     * without that false negative.
+     *
+     * A profile may be an overlay for Compose while remaining a complete `.env` environment;
+     * callers must honor that distinction when excluding profiles from MissingKey.
+     */
+    fun classifyByDomain(
+        profiles: List<ProfileSnapshot>,
+        manualComplete: Set<String>,
+        manualOverlay: Set<String>,
+    ): Map<ProfileId, Map<ConfigDomain, Verdict>> {
+        val byId = profiles.associateBy { it.profile }
+        val result = mutableMapOf<ProfileId, MutableMap<ConfigDomain, Verdict>>()
+
+        for (domain in ConfigDomain.entries) {
+            val peers = profiles.filter { domain in it.domains }.map { it.profile }
+            if (peers.isEmpty()) continue
+
+            val counts = peers.associateWith { profileId ->
+                byId.getValue(profileId).entries.count { it.domain == domain }
+            }
+            for ((profile, verdict) in classify(counts, manualComplete, manualOverlay)) {
+                result.getOrPut(profile) { mutableMapOf() }[domain] = verdict
+            }
+        }
+        return result
     }
 
     private fun median(values: List<Int>): Int {

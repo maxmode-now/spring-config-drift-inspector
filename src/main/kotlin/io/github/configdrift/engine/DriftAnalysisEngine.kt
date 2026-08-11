@@ -31,21 +31,10 @@ class DriftAnalysisEngine(
 
     /** Feature 2: the per-profile presence table the tool window renders. */
     private fun buildMatrix(context: AnalysisContext): Map<NormalizedKey, Map<ProfileId, CellState>> {
-        val profiles = context.snapshot.profileIds
-        return context.snapshot.allKeys.associateWith { key ->
-            profiles.associateWith { profile ->
-                val snapshot = context.snapshot.profile(profile)
-                val isSet = snapshot?.byKey?.containsKey(key) == true
-                when {
-                    isSet -> CellState.SET
-                    context.isSetInDefault(key) -> CellState.INHERITED_FROM_DEFAULT
-                    // Mirrors MissingKeyAnalyzer's scoping: a Spring key under an `.env`-only
-                    // profile is not a gap, so it must not render as one.
-                    snapshot == null || !context.snapshot.isComparable(key, snapshot) ->
-                        CellState.NOT_APPLICABLE
-                    else -> CellState.MISSING
-                }
-            }
+        val snapshot = context.snapshot
+        val profiles = snapshot.profileIds
+        return snapshot.allKeys.associateWith { key ->
+            profiles.associateWith { profile -> snapshot.matrixCell(key, profile) }
         }
     }
 

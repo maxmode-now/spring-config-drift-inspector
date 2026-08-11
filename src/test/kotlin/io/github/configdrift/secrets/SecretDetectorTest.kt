@@ -103,4 +103,49 @@ class SecretDetectorTest {
         assertNull(detect("spring.jpa.hibernate.ddl-auto", "validate"))
         assertNull(detect("logging.level.root", "INFO"))
     }
+
+    @Test
+    fun `jdbc url with placeholder credentials is not a secret exposure`() {
+        assertNull(
+            detect(
+                "spring.datasource.url",
+                "jdbc:postgresql://\${DB_USER}:\${DB_PASSWORD}@localhost/app",
+            ),
+        )
+        assertNull(
+            detect(
+                "spring.datasource.url",
+                "jdbc:postgresql://admin:\${DB_PASSWORD}@localhost/app",
+            ),
+        )
+    }
+
+    @Test
+    fun `jdbc url with hardcoded credentials is still reported`() {
+        assertEquals(
+            "url-embedded-credentials",
+            ruleId(
+                "spring.datasource.url",
+                "postgresql://admin:s3cr3t@db.internal:5432/app",
+            ),
+        )
+    }
+
+    @Test
+    fun `jdbc url with placeholder defaults still ships the credentials`() {
+        assertEquals(
+            "url-embedded-credentials",
+            ruleId(
+                "spring.datasource.url",
+                "postgresql://\${DB_USER:admin}:\${DB_PASSWORD:s3cret}@db.internal/app",
+            ),
+        )
+        assertEquals(
+            "url-embedded-credentials",
+            ruleId(
+                "spring.datasource.url",
+                "postgresql://admin:\${DB_PASSWORD:-changeme}@db.internal/app",
+            ),
+        )
+    }
 }

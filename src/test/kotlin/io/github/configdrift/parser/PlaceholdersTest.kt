@@ -59,4 +59,32 @@ class PlaceholdersTest {
         assertEquals("server.error.include-stacktrace", ref.name)
         assertNull(ref.defaultValue)
     }
+
+    @Test
+    fun `materializeCommitted keeps literals and substitutes non-blank defaults`() {
+        assertEquals("literal", Placeholders.materializeCommitted("literal"))
+        assertEquals("hunter2", Placeholders.materializeCommitted("\${DB_PASSWORD:hunter2}"))
+        assertEquals(
+            "postgresql://admin:s3cret@host/db",
+            Placeholders.materializeCommitted(
+                "postgresql://\${U:admin}:\${P:s3cret}@host/db",
+            ),
+        )
+        assertEquals(
+            "localhost",
+            Placeholders.materializeCommitted("\${DB_HOST:-localhost}"),
+        )
+    }
+
+    @Test
+    fun `materializeCommitted drops bare placeholders so nothing committed remains`() {
+        assertNull(Placeholders.materializeCommitted("\${DB_PASSWORD}"))
+        assertNull(Placeholders.materializeCommitted("\${DB_PASSWORD:}"))
+        assertEquals(
+            "postgresql://:@host/db",
+            Placeholders.materializeCommitted(
+                "postgresql://\${DB_USER}:\${DB_PASSWORD}@host/db",
+            ),
+        )
+    }
 }

@@ -299,11 +299,19 @@ worked, but didn't. `KotlinConfigurationPropertiesContractProvider` reported `de
 Kotlin's own spelling (`"Int"`, `"Long"`, `"List<String>"`), and `MetadataContractAnalyzer` matches
 by exact string against a Java-spelled set (`"java.lang.Integer"`, `"java.util.List"`, ...) — so
 `TYPE_MISMATCH` silently never fired for any Kotlin numeric/boolean property, and a Kotlin
-`List`/`Map` property was never recognized as an open container, which would have made
-`app.server.database.url` in check #3 misfire too. Fixed by having the provider translate the base
-type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BASE_TYPE_NAMES`)
-before building the contract — caught by manual review before this was ever run-verified, which is
-exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
+`List`/`Map` property was never recognized as an open container. Fixed by having the provider
+translate base *and* type-argument names to their Java equivalents
+(`ConfigurationPropertyTypes.javaEquivalentDeclaredType`) before building the contract — base-only
+translation left `List<Int>` as `java.util.List<Int>`, which still silenced indexed element
+`TYPE_MISMATCH` (`hosts[0]`). Check #3 (`app.server.database.url`) is unrelated: it fails open
+because `DatabaseSettings` lives in another file and is not recursed into, not because of List/Map
+container recognition. Caught by manual review before this was ever run-verified, which is exactly
+why this section is titled "not yet run-verified" rather than a claim this actually passed.
+
+Hand-check for the generic-argument path (no fixture property yet): declare
+`val ports: List<Int>` on a Kotlin `@ConfigurationProperties` class, set `…ports[0]: not-a-number`
+in a profile, and expect `TYPE_MISMATCH` against `java.lang.Integer` the same way a Java
+`List<Integer>` property would.
 
 ## Deleting a whole config folder didn't trigger re-analysis
 
@@ -415,9 +423,8 @@ argument.
 
 `CacheProperties.kt` (new fixture file, `@ConfigurationProperties(ignoreUnknownFields = true)`, no
 prefix) was added to check this by hand: with `enabled: Boolean` its only property, confirm the
-resulting key is `enabled`, not `true.enabled` — check the **Key Matrix** or add `enabled: yes` to
-a profile and confirm no `SET_NOT_DECLARED` fires for it (a `SET_NOT_DECLARED` on plain `enabled`
-would mean the prefix bug is back).
+resulting key is `enabled`, not `true.enabled` — check the **Key Matrix**, or look for a
+`DECLARED_NOT_SET` on `true.enabled` (that finding means the prefix bug is back).
 
 ## docker-compose list-form `environment:` values weren't normalized
 

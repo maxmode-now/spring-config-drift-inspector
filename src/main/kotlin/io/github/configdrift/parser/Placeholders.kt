@@ -58,6 +58,35 @@ object Placeholders {
         return refs.size == 1 && refs[0].raw == value.trim() && !refs[0].hasDefault
     }
 
+    /**
+     * The text that actually lands in the repository once placeholders are resolved the only way
+     * a static scan can: bare `${NAME}` / `${NAME:}` contribute nothing, and a non-blank default
+     * (`${NAME:secret}` / `${NAME:-secret}`) contributes that default.
+     *
+     * Used by secret detection so `postgresql://${DB_USER}:${DB_PASSWORD}@host` is not treated as
+     * embedded credentials, while `postgresql://${U:admin}:${P:s3cret}@host` still is — only the
+     * defaults were committed.
+     *
+     * Returns null when nothing non-blank remains (fully externalized, or defaults were empty).
+     */
+    fun materializeCommitted(value: String): String? {
+        val refs = parse(value)
+        if (refs.isEmpty()) return value.takeIf { it.isNotBlank() }
+
+        // Replace from the end so earlier offsets stay valid.
+        var result = value
+        for (ref in refs.sortedByDescending { it.startInValue }) {
+            val replacement = ref.defaultValue?.takeIf { it.isNotBlank() }.orEmpty()
+            result = result.replaceRange(
+                ref.startInValue,
+                ref.startInValue + ref.raw.length,
+                replacement,
+            )
+        }
+        return result.takeIf { it.isNotBlank() }
+    }
+
+
     private fun matchingBrace(text: String, openBraceIndex: Int): Int {
         var depth = 0
         for (i in openBraceIndex until text.length) {

@@ -12,6 +12,10 @@ import io.github.configdrift.model.ProfileId
  * directions — which describes the symptom rather than the fault. It is really one shape conflict,
  * and it is the kind that breaks binding at startup.
  *
+ * The same applies to a scalar versus a list of objects: YAML flattening attaches indexes without
+ * a dot (`app.items[0].name`), so child detection must treat `[` as a boundary the same way as
+ * `.` — see [isChildOf].
+ *
  * Kept as a pure function so it is testable without an IDE fixture, like [OverlayHeuristic].
  */
 object StructuralConflict {
@@ -26,14 +30,13 @@ object StructuralConflict {
         val conflicting = mutableSetOf<NormalizedKey>()
 
         for (key in allKeys) {
-            val prefix = key.value + "."
             val leafIn = profileKeys.keys.filterTo(mutableSetOf()) { profile ->
                 key in profileKeys.getValue(profile)
             }
             if (leafIn.isEmpty()) continue
 
             val containerIn = profileKeys.keys.filterTo(mutableSetOf()) { profile ->
-                profileKeys.getValue(profile).any { it.value.startsWith(prefix) }
+                profileKeys.getValue(profile).any { isChildOf(key.value, it.value) }
             }
             if (containerIn.isEmpty()) continue
 
@@ -54,5 +57,15 @@ object StructuralConflict {
      * `app.cache` has been reported.
      */
     fun isCoveredBy(key: NormalizedKey, conflicting: Set<NormalizedKey>): Boolean =
-        key in conflicting || conflicting.any { key.value.startsWith(it.value + ".") }
+        key in conflicting || conflicting.any { isChildOf(it.value, key.value) }
+
+    /**
+     * Whether [candidate] is nested under [parent] as a map child (`parent.child`) or a list
+     * element (`parent[0]…`).
+     *
+     * A bare [String.startsWith] on [parent] would treat `app.cachesize` as a child of
+     * `app.cache`; requiring `.` or `[` as the next character keeps property boundaries exact.
+     */
+    fun isChildOf(parent: String, candidate: String): Boolean =
+        candidate.startsWith("$parent.") || candidate.startsWith("$parent[")
 }

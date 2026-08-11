@@ -2,6 +2,7 @@ package io.github.configdrift.report
 
 import io.github.configdrift.metadata.MiniJson
 import io.github.configdrift.model.CellState
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.DriftReport
 import io.github.configdrift.model.Finding
 import io.github.configdrift.model.MetadataContractMismatch
@@ -55,7 +56,7 @@ class JsonReportRendererTest {
                 NormalizedKey("e"), MetadataContractMismatch.Kind.DECLARED_NOT_SET,
                 null, null, "java.lang.String", null,
             ),
-            OverlayProfileExcluded(ProfileId("local"), 1, 8, manual = false),
+            OverlayProfileExcluded(ProfileId("local"), ConfigDomain.SPRING, 1, 8, manual = false),
         )
         val report = DriftReport(
             projectName = "demo",

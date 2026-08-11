@@ -121,6 +121,15 @@ enum class ConfigDomain {
     SPRING,
     DOTENV,
     DOCKER_COMPOSE,
+    ;
+
+    /** Short label for findings and reports. */
+    val displayName: String
+        get() = when (this) {
+            SPRING -> "Spring"
+            DOTENV -> ".env"
+            DOCKER_COMPOSE -> "Docker Compose"
+        }
 }
 
 /** One flattened key/value pair as it appears in one file, in one profile. */
@@ -185,5 +194,47 @@ data class ConfigSnapshot(
     fun isComparable(key: NormalizedKey, profile: ProfileSnapshot): Boolean {
         val keyDomains = domainsByKey[key] ?: return false
         return profile.domains.any { it in keyDomains }
+    }
+
+    /**
+     * Domains under which [key] appears in the `default` profile.
+     *
+     * Reads [ProfileSnapshot.entries] rather than [ProfileSnapshot.byKey]: the same normalized
+     * name can legitimately exist in two systems' default files (e.g. Spring `APP_NAME` and a
+     * bare `.env` `APP_NAME`), and last-wins would hide one of them.
+     */
+    fun defaultDomainsOf(key: NormalizedKey): Set<ConfigDomain> {
+        val default = profile(ProfileId.DEFAULT) ?: return emptySet()
+        return default.entries.asSequence()
+            .filter { it.key == key }
+            .mapTo(mutableSetOf()) { it.domain }
+    }
+
+    /**
+     * True when `default` supplies [key] through a config system [profile] actually uses —
+     * Spring `application.yml` inherits into Spring `prod`, but not into an `.env`-only
+     * `staging`. Used by the key matrix so those cells render as [CellState.NOT_APPLICABLE]
+     * (`~`) rather than [CellState.INHERITED_FROM_DEFAULT] (`^`).
+     */
+    fun isInheritedFromDefault(key: NormalizedKey, profile: ProfileSnapshot): Boolean =
+        defaultDomainsOf(key).any { it in profile.domains }
+
+    /**
+     * Presence of [key] under [profileId] for the comparison matrix.
+     *
+     * Order matters: same-system inheritance (`^`) only after ruling out an explicit set value,
+     * and cross-system cells become `~` rather than looking inherited from another system's
+     * default file.
+     */
+    fun matrixCell(key: NormalizedKey, profileId: ProfileId): CellState {
+        val snapshot = profile(profileId)
+        val isSet = snapshot?.byKey?.containsKey(key) == true
+        return when {
+            isSet -> CellState.SET
+            snapshot != null && isInheritedFromDefault(key, snapshot) ->
+                CellState.INHERITED_FROM_DEFAULT
+            snapshot == null || !isComparable(key, snapshot) -> CellState.NOT_APPLICABLE
+            else -> CellState.MISSING
+        }
     }
 }

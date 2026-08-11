@@ -18,15 +18,16 @@ import io.github.configdrift.model.ProfileId
  * a weaker finding but a meaningless one. Left unscoped on a project using two systems, this
  * dominated the report — every key of each system was reported missing from every profile of the
  * other.
+ *
+ * Partial overlays are excluded **per domain** via [AnalysisContext.isOverlayFor]: a profile that
+ * is sparse only in Docker Compose still participates in `.env` MissingKey checks.
  */
 class MissingKeyAnalyzer : DriftAnalyzer {
 
     override val id: String = "missing-key"
 
     override fun analyze(context: AnalysisContext): List<Finding> {
-        // Partial overlays are excluded: a profile that deliberately sets three keys would
-        // otherwise report every other key in the project as missing from it.
-        val profiles = context.completeProfiles
+        val profiles = context.comparableProfiles
         if (profiles.size < 2) return emptyList()
 
         val findings = mutableListOf<Finding>()
@@ -44,6 +45,8 @@ class MissingKeyAnalyzer : DriftAnalyzer {
                 // A profile built from none of this key's config systems is not a place the key
                 // could be missing from.
                 if (!context.snapshot.isComparable(key, snapshot)) continue
+                // Domain-scoped overlay: skip only for the system(s) this profile is sparse in.
+                if (context.isOverlayFor(profile, key)) continue
                 if (snapshot.byKey.containsKey(key)) presentIn += profile else absentIn += profile
             }
             if (presentIn.isEmpty() || absentIn.isEmpty()) continue

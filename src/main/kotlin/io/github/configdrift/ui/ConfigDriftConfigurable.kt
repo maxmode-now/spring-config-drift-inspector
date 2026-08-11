@@ -3,6 +3,7 @@ package io.github.configdrift.ui
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
+import com.intellij.ui.TableUtil
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
@@ -153,6 +154,12 @@ class ConfigDriftConfigurable(private val project: Project) : Configurable {
 
     override fun isModified(): Boolean {
         val model = tableModel ?: return false
+        // A combo-box edit the user hasn't committed yet (selected a new value, but not Enter/
+        // Tab/click-elsewhere) sits in the cell editor, not the model — reading rowsSnapshot()
+        // without this would compare against the *previous* value, so the Settings dialog's
+        // Apply/OK button could stay disabled for a change the user just made, silently dropping
+        // it when the dialog closes.
+        table?.let { TableUtil.stopEditing(it) }
         val classification = ConfigDriftProjectSettings.getInstance(project).manualClassification()
         return model.rowsSnapshot().any { row ->
             val persisted = when (row.profileName) {
@@ -166,6 +173,10 @@ class ConfigDriftConfigurable(private val project: Project) : Configurable {
 
     override fun apply() {
         val model = tableModel ?: return
+        // Same reasoning as isModified(): commit any in-progress combo-box edit into the model
+        // before reading it, or the last cell the user changed right before clicking Apply/OK
+        // could be applied with its previous value instead.
+        table?.let { TableUtil.stopEditing(it) }
         val complete = mutableSetOf<String>()
         val overlay = mutableSetOf<String>()
         for (row in model.rowsSnapshot()) {

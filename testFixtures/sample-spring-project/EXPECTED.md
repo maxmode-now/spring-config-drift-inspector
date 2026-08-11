@@ -305,6 +305,30 @@ type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BAS
 before building the contract — caught by manual review before this was ever run-verified, which is
 exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
 
+## Settings table: an uncommitted combo-box edit could be lost on Apply/OK
+
+`ConfigDriftConfigurable`'s per-profile classification table uses a `JComboBox` cell editor
+(`comboEditor()`). Selecting a new value in an open dropdown doesn't write it into the table model
+until the cell editor is explicitly stopped (Enter, Tab, clicking another cell, ...) — Swing holds
+it in the editor component itself until then. `isModified()` and `apply()` both read
+`tableModel.rowsSnapshot()` directly, with nothing forcing that commit first. If the user changed a
+row's dropdown and then went straight for the dialog's Apply/OK button (a very ordinary sequence —
+nothing tells a user to click elsewhere first), two different failures were possible depending on
+timing:
+- `isModified()` sees the *old* value, doesn't detect a change, and the Apply button can stay
+  disabled for a change the user just made — closing the dialog with OK then discards it silently.
+- Even where `apply()` does run, it would read the same stale snapshot and persist the previous
+  classification instead of the one visibly selected in the dropdown.
+
+Fixed by calling `com.intellij.ui.TableUtil.stopEditing(table)` at the top of both `isModified()`
+and `apply()`, which is exactly what it exists for — committing any in-progress cell edit into the
+model before either reads it.
+
+To verify by hand: open **Settings | Tools | Config Drift** with at least one profile row (run
+Analyze first), click a row's "Treat as" cell to open the combo dropdown, select a different value,
+and — **without** clicking elsewhere or pressing Enter/Tab first — click **OK** directly. Reopen
+Settings and confirm the new classification stuck.
+
 ## Manual Analyze could finish without opening the tool window
 
 `ConfigDriftService.analyzeInBackgroundAndPublish(onSuccess)` gated `onSuccess()` behind

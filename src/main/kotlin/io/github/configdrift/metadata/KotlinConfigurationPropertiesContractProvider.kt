@@ -93,11 +93,17 @@ class KotlinConfigurationPropertiesContractProvider : BindingContractProvider {
         return explicit?.trim('"') ?: ""
     }
 
-    /** Named argument first (`prefix = "app.mail"`); falls back to a single positional argument. */
+    /**
+     * Named argument first (`prefix = "app.mail"`); falls back to a single *positional* argument
+     * (`@ConfigurationProperties("app.mail")`). The fallback must check the single argument has no
+     * name of its own — `@ConfigurationProperties(ignoreUnknownFields = true)` also has exactly one
+     * argument, but it isn't a positional prefix/value, and treating it as one would read `"true"`
+     * as the prefix.
+     */
     private fun argumentText(annotation: KtAnnotationEntry, name: String): String? {
         val args = annotation.valueArguments
         val arg = args.firstOrNull { it.getArgumentName()?.asName?.asString() == name }
-            ?: args.singleOrNull()
+            ?: args.singleOrNull { it.getArgumentName() == null }
             ?: return null
         return arg.getArgumentExpression()?.text
     }

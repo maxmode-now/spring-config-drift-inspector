@@ -305,6 +305,26 @@ type name to its Java equivalent (`ConfigurationPropertyTypes.KOTLIN_TO_JAVA_BAS
 before building the contract — caught by manual review before this was ever run-verified, which is
 exactly why this section is titled "not yet run-verified" rather than a claim this actually passed.
 
+## Kotlin annotation prefix misread from a non-prefix single argument
+
+`prefixOf()`'s `argumentText()` helper fell back to `annotation.valueArguments.singleOrNull()`
+whenever an annotation had exactly one argument, on the assumption that a lone argument must be the
+positional `prefix`/`value` (`@ConfigurationProperties("app.mail")`). But
+`@ConfigurationProperties(ignoreUnknownFields = true)` also has exactly one argument — it's just
+named `ignoreUnknownFields`, not a positional prefix. The old fallback matched it anyway and read
+its expression text (`"true"`) as the prefix, so every property in that class would have been keyed
+as `true.enabled` instead of the intended top-level `enabled`.
+
+Fixed by requiring the single-argument fallback to also have no explicit name of its own
+(`args.singleOrNull { it.getArgumentName() == null }`), so it only fires for an actual positional
+argument.
+
+`CacheProperties.kt` (new fixture file, `@ConfigurationProperties(ignoreUnknownFields = true)`, no
+prefix) was added to check this by hand: with `enabled: Boolean` its only property, confirm the
+resulting key is `enabled`, not `true.enabled` — check the **Key Matrix** or add `enabled: yes` to
+a profile and confirm no `SET_NOT_DECLARED` fires for it (a `SET_NOT_DECLARED` on plain `enabled`
+would mean the prefix bug is back).
+
 ## `@ConfigurationProperties` scoped to project sources, not the whole classpath
 
 Both PSI providers (`ConfigurationPropertiesContractProvider`, `KotlinConfigurationPropertiesContractProvider`)

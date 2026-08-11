@@ -16,4 +16,5 @@ import java.lang.annotation.Target;
 public @interface ConfigurationProperties {
     String value() default "";
     String prefix() default "";
+    boolean ignoreUnknownFields() default true;
 }

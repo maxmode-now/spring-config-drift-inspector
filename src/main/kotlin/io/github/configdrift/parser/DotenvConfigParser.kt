@@ -3,6 +3,7 @@ package io.github.configdrift.parser
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ConfigEntry
 
 /**
@@ -14,6 +15,8 @@ import io.github.configdrift.model.ConfigEntry
  * instead — see [ParseSupport.locationOf]'s offset overload.
  */
 class DotenvConfigParser : ConfigFileParser {
+
+    override val domain: ConfigDomain = ConfigDomain.DOTENV
 
     override fun supports(file: VirtualFile): Boolean = DotenvNaming.matches(file.name)
 
@@ -39,6 +42,7 @@ class DotenvConfigParser : ConfigFileParser {
                 ),
                 profile = profile,
                 location = location,
+                domain = domain,
             )
         }
 

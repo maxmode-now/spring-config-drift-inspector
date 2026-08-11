@@ -259,3 +259,57 @@ To verify by hand:
 5. This whole class was reachable without a real Spring Boot dependency on the fixture's
    classpath — confirms the provider resolves the annotation by qualified name, not by requiring
    the genuine library.
+
+## Cross-system comparison scoping — the bug this fixture caught
+
+Adding `.env` and docker-compose support to a fixture that already had Spring config exposed a
+real defect, and it took running the analysis on all three at once to see it: **29 ERROR findings
+where 17 were real.** Every Spring-only key was reported missing from the `.env`/compose profiles
+and vice versa:
+
+```
+'APP_NAME' is missing in dev, prod, stage but set in production, staging
+'spring.datasource.url' is missing in production, staging but set in dev, prod, stage
+'web.DB_HOST' is missing in dev, prod, stage but set in production, staging
+```
+
+None of those are defects. `dev` is a Spring profile with no `.env` file behind it, so `APP_NAME`
+is not missing from it — the question doesn't apply. The engine had no notion of a key belonging
+to a *config system*, so `MissingKeyAnalyzer` treated every profile as a candidate for every key.
+
+Fixed by tagging each `ConfigEntry` with a `ConfigDomain` (`SPRING` / `DOTENV` / `DOCKER_COMPOSE`)
+and scoping every comparison that infers **absence** to profiles that actually use the key's own
+system — missing-key findings, the key matrix, and the metadata contract check. Comparisons that
+only describe keys where they *are* set (shape drift, structural conflicts) are untouched: they
+never claim a key is missing from anywhere, so they were never wrong.
+
+Two latent bugs were fixed alongside it, both found by reasoning through the same scoping question
+rather than by observation — neither had shown up yet in this fixture:
+- A docker-compose service named `app` or `spring` produces keys like `app.DB_HOST`, whose
+  *namespace* is one the metadata declares, so every one of its environment variables would have
+  been reported as an undeclared Spring property. `MetadataContractAnalyzer` now considers Spring
+  entries only.
+- The partial-overlay heuristic measured every profile against every other, so a four-variable
+  `.env.prod` sitting beside Spring profiles setting thirty properties each would be judged an
+  overlay and dropped from comparison entirely, hiding every real gap in it. It now judges each
+  config system's profiles against their own peers.
+
+Expected after the fix — **17 ERROR**, and the check that matters is *which* ones:
+
+```
+MissingKey (8)     app.apikey, app.debug.verbose, app.hosts, app.mail.hots, app.shared.flag
+                   FEATURE_FLAG_BETA   (.env: staging only)
+                   web.DEBUG           (compose: staging only)
+                   worker.WORKER_CONCURRENCY (compose: staging only)
+SecretExposure (5) spring.datasource.password ×2 (dev, stage), app.apikey (aws),
+                   DB_PASSWORD (.env staging), web.DB_PASSWORD (compose staging)
+ShapeMismatch (3)  app.cache, app.feature.timeout, app.mail.port
+TYPE_MISMATCH (1)  app.mail.port
+```
+
+The three cross-format MissingKey rows are the fixture's whole point: they are real gaps *within*
+one system, proving the scoping narrowed the comparison rather than disabling it.
+
+In the **Key Matrix**, cells that were wrongly `-` now render `~` ("not applicable — different
+config system"). The "only keys missing somewhere" filter matches `-` alone, so those rows
+correctly drop out of it.

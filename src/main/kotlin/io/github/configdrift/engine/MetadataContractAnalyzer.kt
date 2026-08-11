@@ -1,5 +1,6 @@
 package io.github.configdrift.engine
 
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ConfigValue
 import io.github.configdrift.model.Finding
 import io.github.configdrift.model.MetadataContractMismatch
@@ -35,6 +36,13 @@ class MetadataContractAnalyzer : DriftAnalyzer {
 
         for (profileSnapshot in context.snapshot.profiles) {
             for (entry in profileSnapshot.entries) {
+                // Metadata declares Spring properties, so only Spring entries can contradict it.
+                // Without this the namespace test below misfires on a docker-compose service that
+                // happens to be named after a declared Spring namespace: a service called `app`
+                // yields keys like `app.DB_HOST`, whose namespace *is* declared, so every one of
+                // its environment variables would be reported as an undeclared Spring property.
+                if (entry.domain != ConfigDomain.SPRING) continue
+
                 val bare = stripIndices(entry.key)
                 val contract = context.contractFor(bare)
 
@@ -68,7 +76,12 @@ class MetadataContractAnalyzer : DriftAnalyzer {
             }
         }
 
-        val setKeys = context.snapshot.allKeys.mapTo(mutableSetOf()) { stripIndices(it) }
+        // Spring entries only, for the same reason: a `.env` variable that coincidentally matches
+        // a declared property name does not mean that Spring property is actually set.
+        val setKeys = context.snapshot.profiles.asSequence()
+            .flatMap { it.entries.asSequence() }
+            .filter { it.domain == ConfigDomain.SPRING }
+            .mapTo(mutableSetOf()) { stripIndices(it.key) }
         for (key in declared) {
             if (key !in setKeys) {
                 findings += MetadataContractMismatch(

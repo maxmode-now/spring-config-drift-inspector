@@ -2,6 +2,7 @@ package io.github.configdrift.parser
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ConfigEntry
 import io.github.configdrift.model.NormalizedKey
 import io.github.configdrift.model.ProfileId
@@ -30,6 +31,7 @@ fun List<RawPair>.toParsedDocument(
     support: ParseSupport,
     psiFile: PsiFile,
     profile: ProfileId,
+    domain: ConfigDomain,
 ): ParsedDocument {
     val onProfileKey = KeyNormalizer.normalize(ProfileResolver.ON_PROFILE_KEY)
 
@@ -49,6 +51,7 @@ fun List<RawPair>.toParsedDocument(
                 ),
                 profile = profile,
                 location = location,
+                domain = domain,
             )
         }
         .toList()

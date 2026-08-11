@@ -50,6 +50,7 @@ class MatrixTableModel : AbstractTableModel() {
         return when (cells[profile]) {
             CellState.SET -> SET
             CellState.INHERITED_FROM_DEFAULT -> INHERITED
+            CellState.NOT_APPLICABLE -> NOT_APPLICABLE
             else -> MISSING
         }
     }
@@ -64,7 +65,16 @@ class MatrixTableModel : AbstractTableModel() {
         const val INHERITED = "^"
         const val MISSING = "-"
 
+        /**
+         * Rendered distinctly from [MISSING] because it means the opposite thing: the key belongs
+         * to a config system this profile does not use at all, so there is nothing to fix. The
+         * "only keys missing somewhere" filter matches on [MISSING] alone, so these rows correctly
+         * stay out of it.
+         */
+        const val NOT_APPLICABLE = "~"
+
         const val LEGEND =
-            "Legend: $SET set  ·  $INHERITED inherited from default  ·  $MISSING missing"
+            "Legend: $SET set  ·  $INHERITED inherited from default  ·  $MISSING missing  ·  " +
+                "$NOT_APPLICABLE not applicable (different config system)"
     }
 }

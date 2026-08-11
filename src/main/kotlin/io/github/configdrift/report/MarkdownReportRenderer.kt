@@ -72,7 +72,10 @@ class MarkdownReportRenderer : ReportRenderer {
     private fun StringBuilder.appendMatrix(report: DriftReport) {
         appendLine("## Key matrix")
         appendLine()
-        appendLine("Legend: `O` set · `^` inherited from default · `-` missing")
+        appendLine(
+            "Legend: `O` set · `^` inherited from default · `-` missing · " +
+                "`~` not applicable (different config system)",
+        )
         appendLine()
         appendLine("| Key | ${report.profiles.joinToString(" | ")} |")
         appendLine("| --- |${report.profiles.joinToString("") { " --- |" }}")
@@ -82,6 +85,7 @@ class MarkdownReportRenderer : ReportRenderer {
                 when (cells[profile]) {
                     CellState.SET -> "O"
                     CellState.INHERITED_FROM_DEFAULT -> "^"
+                    CellState.NOT_APPLICABLE -> "~"
                     else -> "-"
                 }
             }

@@ -26,6 +26,7 @@ app:
     host: cache.internal
     port: 6379
   mail:
-    port: 587
+    aliases[0]
+    port: vsvsv
     # Typo for `host`. Expect: MetadataContractMismatch / SET_NOT_DECLARED.
-    hostt: smtp.example.com
+    hots: smtp.example.com

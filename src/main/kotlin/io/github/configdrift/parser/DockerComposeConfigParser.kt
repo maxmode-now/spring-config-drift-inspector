@@ -3,6 +3,7 @@ package io.github.configdrift.parser
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ConfigEntry
 import org.jetbrains.yaml.psi.YAMLFile
 import org.jetbrains.yaml.psi.YAMLKeyValue
@@ -23,6 +24,8 @@ import org.jetbrains.yaml.psi.YAMLValue
  * in `environment:`, not values pulled in from an external `.env` file at deploy time.
  */
 class DockerComposeConfigParser : ConfigFileParser {
+
+    override val domain: ConfigDomain = ConfigDomain.DOCKER_COMPOSE
 
     override fun supports(file: VirtualFile): Boolean = DockerComposeNaming.matches(file.name)
 
@@ -47,6 +50,7 @@ class DockerComposeConfigParser : ConfigFileParser {
                     value = support.valueOf(key, rawValue, profile, location),
                     profile = profile,
                     location = location,
+                    domain = domain,
                 )
             }
         }

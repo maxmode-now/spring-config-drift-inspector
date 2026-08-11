@@ -105,6 +105,24 @@ sealed interface ConfigValue {
     }
 }
 
+/**
+ * Which configuration system an entry came from.
+ *
+ * Absence only means something *within* one domain. `.env`'s `DB_HOST` and Spring's
+ * `spring.datasource.url` are not two spellings of one setting — they are separate systems that
+ * happen to share a repository, so "this Spring key is not in your `.env` files" is not a finding,
+ * it is a category error. Comparisons that infer absence ([io.github.configdrift.engine.MissingKeyAnalyzer],
+ * the key matrix) are therefore scoped to profiles that actually use the key's own domain.
+ *
+ * Comparisons that only describe keys where they *are* set — shape drift, structural conflicts —
+ * need no such scoping: they never claim a key is missing from anywhere.
+ */
+enum class ConfigDomain {
+    SPRING,
+    DOTENV,
+    DOCKER_COMPOSE,
+}
+
 /** One flattened key/value pair as it appears in one file, in one profile. */
 data class ConfigEntry(
     val key: NormalizedKey,
@@ -113,6 +131,7 @@ data class ConfigEntry(
     val value: ConfigValue,
     val profile: ProfileId,
     val location: SourceLocation,
+    val domain: ConfigDomain,
 ) {
     val shape: ValueShape get() = value.shape
 }
@@ -132,6 +151,13 @@ data class ProfileSnapshot(
         entries.associateBy { it.key }
 
     val keys: Set<NormalizedKey> get() = byKey.keys
+
+    /**
+     * The config systems that contributed to this profile — `staging` assembled from
+     * `.env.staging` and `docker-compose.staging.yml` carries both. A profile that no file of a
+     * given domain contributed to cannot meaningfully be "missing" that domain's keys.
+     */
+    val domains: Set<ConfigDomain> = entries.mapTo(mutableSetOf()) { it.domain }
 }
 
 /** The full parsed picture of a project's configuration, the engine's only input. */
@@ -143,5 +169,21 @@ data class ConfigSnapshot(
     val allKeys: Set<NormalizedKey> =
         profiles.flatMapTo(linkedSetOf()) { it.keys }
 
+    /**
+     * Which domains each key is defined in — normally exactly one, but a name that legitimately
+     * exists in two systems keeps both rather than being forced into a single owner.
+     */
+    val domainsByKey: Map<NormalizedKey, Set<ConfigDomain>> =
+        profiles.asSequence()
+            .flatMap { it.entries.asSequence() }
+            .groupingBy { it.key }
+            .fold(emptySet<ConfigDomain>()) { domains, entry -> domains + entry.domain }
+
     fun profile(id: ProfileId): ProfileSnapshot? = profiles.firstOrNull { it.profile == id }
+
+    /** True when [profile] uses at least one of the config systems [key] is defined in. */
+    fun isComparable(key: NormalizedKey, profile: ProfileSnapshot): Boolean {
+        val keyDomains = domainsByKey[key] ?: return false
+        return profile.domains.any { it in keyDomains }
+    }
 }

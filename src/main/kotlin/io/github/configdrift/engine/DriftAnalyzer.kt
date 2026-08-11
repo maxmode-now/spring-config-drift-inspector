@@ -51,14 +51,24 @@ class AnalysisContext(
      * [OverlayProfileAnalyzer] rather than applied silently.
      */
     val overlayProfiles: Map<ProfileId, OverlayHeuristic.Verdict> by lazy {
-        val counts = comparableProfiles.associateWith { profile ->
-            snapshot.profile(profile)?.keys?.size ?: 0
-        }
         // manualClassification() hands back a private copy rather than a live reference into
         // settings — this runs on a background analysis thread, while the EDT can be mutating
         // the same sets via Settings|Apply or a suppress/un-suppress action at any moment.
         val classification = ConfigDriftProjectSettings.getInstance(project).manualClassification()
-        OverlayHeuristic.classify(counts, classification.manualComplete, classification.manualOverlay)
+
+        // Judged within each config system separately: "sets far fewer keys than its peers" only
+        // means anything against comparable peers. A four-variable `.env.prod` measured against
+        // Spring profiles setting thirty properties each would be called a partial overlay and
+        // dropped from missing-key comparison entirely, hiding every real gap in it.
+        comparableProfiles
+            .groupBy { snapshot.profile(it)?.domains.orEmpty() }
+            .flatMap { (_, peers) ->
+                val counts = peers.associateWith { snapshot.profile(it)?.keys?.size ?: 0 }
+                OverlayHeuristic
+                    .classify(counts, classification.manualComplete, classification.manualOverlay)
+                    .entries
+            }
+            .associate { it.key to it.value }
     }
 
     /** The profiles missing-key comparison actually runs across. */

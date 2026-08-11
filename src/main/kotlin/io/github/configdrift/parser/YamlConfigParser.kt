@@ -3,6 +3,7 @@ package io.github.configdrift.parser
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ValueShape
 import org.jetbrains.yaml.psi.YAMLFile
 import org.jetbrains.yaml.psi.YAMLMapping
@@ -23,6 +24,8 @@ import org.jetbrains.yaml.psi.YAMLValue
  */
 class YamlConfigParser : ConfigFileParser {
 
+    override val domain: ConfigDomain = ConfigDomain.SPRING
+
     override fun supports(file: VirtualFile): Boolean =
         file.extension in YAML_EXTENSIONS && ProfileResolver.isConfigFileName(file.name)
 
@@ -35,7 +38,7 @@ class YamlConfigParser : ConfigFileParser {
             if (pairs.isEmpty()) return@flatMap emptyList()
 
             val profiles = pairs.declaredProfiles() ?: listOf(fileProfile)
-            val first = pairs.toParsedDocument(support, psiFile, profiles.first())
+            val first = pairs.toParsedDocument(support, psiFile, profiles.first(), domain)
             // A document may activate for several profiles at once (`on-profile: "dev|stage"`);
             // the same entries then legitimately belong to each of them. Shared with
             // PropertiesConfigParser, which needs the identical fan-out for the same reason.

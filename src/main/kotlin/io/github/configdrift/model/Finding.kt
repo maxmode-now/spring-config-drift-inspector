@@ -197,8 +197,14 @@ data class OverlayProfileExcluded(
     }
 }
 
-/** Presence of one key in one profile, for the comparison matrix (feature 2). */
-enum class CellState { SET, MISSING, INHERITED_FROM_DEFAULT }
+/**
+ * Presence of one key in one profile, for the comparison matrix (feature 2).
+ *
+ * [NOT_APPLICABLE] is distinct from [MISSING] on purpose: a Spring-only key showing `-` under a
+ * profile that has no Spring files at all reads as a gap the user should close, when in fact
+ * there is nothing to close — see [ConfigDomain].
+ */
+enum class CellState { SET, MISSING, INHERITED_FROM_DEFAULT, NOT_APPLICABLE }
 
 /** The complete analysis result: the matrix for the table plus the flat finding list. */
 data class DriftReport(

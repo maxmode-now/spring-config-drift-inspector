@@ -34,10 +34,15 @@ class DriftAnalysisEngine(
         val profiles = context.snapshot.profileIds
         return context.snapshot.allKeys.associateWith { key ->
             profiles.associateWith { profile ->
-                val isSet = context.snapshot.profile(profile)?.byKey?.containsKey(key) == true
+                val snapshot = context.snapshot.profile(profile)
+                val isSet = snapshot?.byKey?.containsKey(key) == true
                 when {
                     isSet -> CellState.SET
                     context.isSetInDefault(key) -> CellState.INHERITED_FROM_DEFAULT
+                    // Mirrors MissingKeyAnalyzer's scoping: a Spring key under an `.env`-only
+                    // profile is not a gap, so it must not render as one.
+                    snapshot == null || !context.snapshot.isComparable(key, snapshot) ->
+                        CellState.NOT_APPLICABLE
                     else -> CellState.MISSING
                 }
             }

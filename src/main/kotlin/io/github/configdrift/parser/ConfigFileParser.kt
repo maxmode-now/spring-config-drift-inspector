@@ -5,6 +5,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import io.github.configdrift.discovery.ProjectPaths
+import io.github.configdrift.model.ConfigDomain
 import io.github.configdrift.model.ConfigEntry
 import io.github.configdrift.model.ConfigValue
 import io.github.configdrift.model.NormalizedKey
@@ -39,6 +40,12 @@ data class SecretHit(
  * best-effort line guess.
  */
 interface ConfigFileParser {
+    /**
+     * Which config system this parser reads. Every [ConfigEntry] it produces is tagged with it, so
+     * the engine can keep "missing" comparisons inside one system — see [ConfigDomain].
+     */
+    val domain: ConfigDomain
+
     fun supports(file: VirtualFile): Boolean
 
     fun parse(support: ParseSupport, psiFile: PsiFile): List<ParsedDocument>

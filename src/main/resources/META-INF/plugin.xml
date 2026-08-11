@@ -12,12 +12,19 @@
     <h3>What it finds</h3>
     <ul>
       <li><b>Missing keys</b> — set in some environments, silently absent from others, with
-          default-profile inheritance handled correctly</li>
+          default-profile inheritance handled correctly. Comparisons stay scoped within one
+          config system (Spring / <code>.env</code> / Compose), so a Spring-only key is never
+          reported missing from an <code>.env</code>-only profile. The Key Matrix marks those
+          cells as <code>~</code> (not applicable)</li>
       <li><b>Shape drift</b> — the same key is a number in one environment and a string, list, or
-          nested object in another</li>
+          nested object in another — including a scalar in one profile versus a list of objects
+          in another</li>
       <li><b>Exposed secrets</b> — passwords, tokens, API keys, private keys, and credentials
           embedded in URLs. Values are masked the moment they are detected and are never stored,
-          logged, or written to a report</li>
+          logged, or written to a report. Correctly externalized values
+          (<code>${DB_PASSWORD}</code>, or <code>postgresql://${DB_USER}:${DB_PASSWORD}@…</code>)
+          are left alone; only what is actually committed (including non-blank placeholder
+          defaults) is flagged</li>
       <li><b>Unresolved placeholders</b> — <code>${DB_HOST}</code> references with no default and
           nothing in the project to supply them</li>
       <li><b>Metadata contract violations</b> — cross-checked against
@@ -29,11 +36,13 @@
     <p>Relaxed binding is understood, so <code>driver-class-name</code>,
     <code>driverClassName</code>, and <code>DRIVER_CLASS_NAME</code> count as one property rather
     than three. Profiles that only override a handful of keys are recognised as partial overlays
-    instead of being reported as incomplete environments, and that judgement can be overridden per
-    profile in settings.</p>
+    <b>within each config system</b> instead of being reported as incomplete environments; that
+    judgement can be overridden per profile in Settings | Tools | Config Drift.</p>
 
-    <p>Every finding jumps to the exact key in the exact file. Results export as Markdown for a
-    pull request or JSON for a CI gate.</p>
+    <p>Every finding jumps to the exact key in the exact file. Inline highlights and the tool
+    window refresh automatically a couple of seconds after you save a config file — or after a
+    config file or folder is moved, renamed, or deleted. Results export as Markdown for a pull
+    request or JSON for a CI gate.</p>
 
     <h3>Scope</h3>
     <p>This is static comparison plus a lightweight metadata contract check — it does not
@@ -45,48 +54,38 @@
     ]]></description>
 
     <change-notes><![CDATA[
-    <h3>0.5.0</h3>
-    <ul>
-      <li>New: <code>@ConfigurationProperties</code> detection now also reads Kotlin classes, not
-          just Java — constructor-bound <code>data class</code> properties and body-declared
-          properties are both covered</li>
-      <li>Kotlin classification is a syntactic PSI walk, not semantic type resolution: a nested
-          property is only followed into a type declared in the same file as the annotated class</li>
-      <li>This plugin now also depends on the bundled Kotlin plugin
-          (<code>org.jetbrains.kotlin</code>)</li>
-    </ul>
-
-    <h3>0.4.0</h3>
-    <ul>
-      <li>New: metadata contract checks (declared-but-unset, set-but-undeclared, type mismatches)
-          now also read your project's own <code>@ConfigurationProperties</code> classes (Java),
-          not just <code>spring-configuration-metadata.json</code> — useful when the annotation
-          processor that generates that file isn't enabled, or doesn't cover every class</li>
-      <li>This plugin now depends on the bundled Java plugin (<code>com.intellij.java</code>)</li>
-    </ul>
-
-    <h3>0.3.0</h3>
-    <ul>
-      <li>New: <code>docker-compose.yml</code> / <code>compose.yml</code> files are now compared
-          across profiles too — each service's <code>environment:</code> block is checked, keyed
-          per service (<code>web.DB_HOST</code>, <code>worker.DB_HOST</code> are tracked as
-          separate variables). Profiles follow the filename
-          (<code>docker-compose.yml</code>, <code>docker-compose.production.yml</code>,
-          <code>docker-compose.override.yml</code>); <code>env_file:</code> references are not
-          followed</li>
-      <li>Unresolved-placeholder detection now also understands Compose's
-          <code>${VAR:-default}</code> default-value syntax, not just Spring's
-          <code>${VAR:default}</code></li>
-    </ul>
-
     <h3>0.2.0</h3>
     <ul>
-      <li>New: <code>.env</code> files are now compared across profiles too, alongside
+      <li>New: <code>.env</code> files are compared across profiles alongside
           <code>application*.yml</code>/<code>.properties</code> — including missing-key,
           shape-drift, and secret detection. Profiles follow the dotenv convention
           (<code>.env</code>, <code>.env.production</code>, <code>.env.production.local</code>)</li>
-      <li>Secret detection now also recognises underscore-separated key names
-          (<code>DB_PASSWORD</code>, <code>API_KEY</code>), not just Spring's dot-separated form</li>
+      <li>New: <code>docker-compose.yml</code> / <code>compose.yml</code> support — each service's
+          <code>environment:</code> block is checked, keyed per service
+          (<code>web.DB_HOST</code> vs <code>worker.DB_HOST</code>). Profiles follow the filename;
+          <code>env_file:</code> references are not followed. Compose
+          <code>${VAR:-default}</code> defaults are understood alongside Spring's
+          <code>${VAR:default}</code></li>
+      <li>New: comparisons are scoped per config system (Spring / <code>.env</code> / Compose),
+          so a Spring-only key is never reported missing from an <code>.env</code>-only profile;
+          the Key Matrix uses <code>~</code> for not-applicable cells</li>
+      <li>New: metadata contract checks also read project
+          <code>@ConfigurationProperties</code> classes (Java and Kotlin), not only
+          <code>spring-configuration-metadata.json</code>. Kotlin uses a syntactic PSI walk —
+          nested types are only followed when declared in the same file. Depends on the bundled
+          Java and Kotlin plugins</li>
+      <li>Secret detection also recognises underscore-separated key names
+          (<code>DB_PASSWORD</code>, <code>API_KEY</code>)</li>
+      <li>Fixed Key Matrix cells wrongly showing inherited (<code>^</code>) across config systems</li>
+      <li>Fixed scalar-vs-list-of-object shape conflicts when YAML flattens indexed children as
+          <code>app.items[0].name</code></li>
+      <li>Fixed secret false positives on correctly externalized JDBC URLs such as
+          <code>postgresql://${DB_USER}:${DB_PASSWORD}@…</code></li>
+      <li>Fixed automatic re-analysis when a folder containing config files is moved, renamed, or
+          deleted</li>
+      <li>Fixed partial-overlay detection to judge peers per config system</li>
+      <li>Fixed Kotlin cross-file nested types producing spurious declared-but-never-set INFO
+          findings when only nested children are set</li>
     </ul>
 
     <h3>0.1.1</h3>
@@ -193,7 +192,7 @@
             id="ConfigDrift.Analyze"
             class="io.github.configdrift.ui.AnalyzeConfigDriftAction"
             text="Analyze Spring Config Drift"
-            description="Compare application config files across profiles and report drift">
+            description="Compare application*.yml/.properties, .env, and docker-compose files across profiles and report drift">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <!-- Filtered to application*.yml/.properties files at runtime by the action's own
                  update(), not by these registrations — a popup-menu group can't express "only

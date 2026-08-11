@@ -30,9 +30,14 @@ dependencies {
         }
 
         // YAML and Properties PSI give us exact offsets for "jump to source",
-        // which snakeyaml-style line guessing cannot. Java PSI is for reading
-        // @ConfigurationProperties classes directly (ConfigurationPropertiesContractProvider).
-        bundledPlugins("org.jetbrains.plugins.yaml", "com.intellij.properties", "com.intellij.java")
+        // which snakeyaml-style line guessing cannot. Java/Kotlin PSI are for reading
+        // @ConfigurationProperties classes directly (Configuration*PropertiesContractProvider).
+        bundledPlugins(
+            "org.jetbrains.plugins.yaml",
+            "com.intellij.properties",
+            "com.intellij.java",
+            "org.jetbrains.kotlin",
+        )
 
         pluginVerifier()
 

@@ -41,8 +41,8 @@ runtime — it flags what's inconsistent, missing, or exposed in your files as w
   supply it; reported as INFO/WARNING, never as a hard error, because the plugin can't see your
   real deployment environment
 - ✅ **Metadata contract checks** — cross-references `spring-configuration-metadata.json` and,
-  when present, your own `@ConfigurationProperties` classes (Java) for keys declared but never
-  set, set but never declared, and simple type mismatches
+  when present, your own `@ConfigurationProperties` classes (Java and Kotlin) for keys declared
+  but never set, set but never declared, and simple type mismatches
 - ✅ **`.env` and Docker Compose support** — the same comparison, secret detection, and
   placeholder analysis apply to `.env`/`.env.<profile>` files and each service's `environment:`
   block in `docker-compose*.yml`/`compose*.yml`, keyed per service so `web`'s and `worker`'s
@@ -71,9 +71,11 @@ seconds after you save a config file — no need to keep re-running the analysis
 
 Scope is a feature here, not a limitation to apologize for:
 
-- No full Spring Binder reimplementation — `@ConfigurationProperties` reading is a lightweight,
-  Java-only PSI walk (Kotlin classes aren't read yet), and nested properties inside a
-  `List<CustomType>`/`Map<String, CustomType>` element aren't modeled, only the container itself
+- No full Spring Binder reimplementation — `@ConfigurationProperties` reading is a lightweight PSI
+  walk (Java and Kotlin), not semantic type resolution. Nested properties inside a
+  `List<CustomType>`/`Map<String, CustomType>` element aren't modeled, only the container itself,
+  and for Kotlin specifically, a nested property is only followed into a type declared in the
+  same file — cross-file type resolution isn't attempted
 - No SpEL, Vault, or Config Server resolution
 - No live environment-variable lookup — the plugin only knows what's in your repository
 - No `docker-compose`'s `env_file:` references — only values written directly in an
@@ -86,9 +88,9 @@ new format later plugs in without reshaping the engine.
 
 ## Requirements
 
-IntelliJ Platform 2025.3 or later, with the bundled Java plugin enabled (`@ConfigurationProperties`
-detection reads Java PSI directly). IntelliJ IDEA and most other IDEs on the platform ship it by
-default.
+IntelliJ Platform 2025.3 or later, with the bundled Java and Kotlin plugins enabled
+(`@ConfigurationProperties` detection reads Java/Kotlin PSI directly). IntelliJ IDEA and most
+other IDEs on the platform ship both by default.
 
 ## Installation
 

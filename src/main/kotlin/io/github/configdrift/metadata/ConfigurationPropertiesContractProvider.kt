@@ -13,6 +13,7 @@ import com.intellij.psi.search.searches.AnnotatedElementsSearch
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.containers.ContainerUtil
 import io.github.configdrift.model.NormalizedKey
+import org.jetbrains.kotlin.asJava.classes.KtLightClass
 import io.github.configdrift.parser.KeyNormalizer
 import io.github.configdrift.spi.BindingContractProvider
 import io.github.configdrift.spi.KeyContract
@@ -70,6 +71,11 @@ class ConfigurationPropertiesContractProvider : BindingContractProvider {
         // ambiguous between the two. The discovered class count in any real project is small
         // enough that materializing it up front costs nothing worth avoiding the ambiguity for.
         for (psiClass in AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.allScope(project)).findAll()) {
+            // Kotlin classes surface here too, through their Java-interop light-class facade —
+            // handled by KotlinConfigurationPropertiesContractProvider instead, which reads the
+            // real Kotlin PSI rather than the light class's synthetic (and lossy: mangled types,
+            // visibility-dependent) field view.
+            if (psiClass is KtLightClass) continue
             val virtualFile = psiClass.containingFile?.virtualFile
             if (virtualFile == null || fileIndex.isInTestSourceContent(virtualFile)) continue
             val prefix = prefixOf(psiClass) ?: continue
@@ -189,4 +195,29 @@ object ConfigurationPropertyTypes {
 
     fun isKnownLeafOrContainerTypeName(canonicalTypeName: String): Boolean =
         canonicalTypeName in LEAF_TYPE_NAMES || canonicalTypeName in CONTAINER_TYPE_NAMES
+
+    /**
+     * The same two concepts, matched by simple name instead of FQN — for
+     * [KotlinConfigurationPropertiesContractProvider], which classifies a declared type from its
+     * syntax alone (`KtUserType.referencedName`, e.g. `"Smtp"` or `"List"`) rather than a resolved
+     * [com.intellij.psi.PsiType], since resolving a Kotlin type reference needs semantic analysis
+     * this provider deliberately doesn't perform — see that class's own KDoc for why.
+     */
+    val KOTLIN_LEAF_SIMPLE_NAMES: Set<String> = setOf(
+        "String", "Boolean", "Int", "Long", "Short", "Byte", "Double", "Float", "Char",
+        "BigDecimal", "BigInteger",
+        "Duration", "LocalDate", "LocalDateTime", "LocalTime", "Instant",
+        "URI", "URL",
+        "File", "Path",
+        "Charset", "Pattern",
+        "DataSize", "DataUnit",
+    )
+
+    val KOTLIN_CONTAINER_SIMPLE_NAMES: Set<String> = setOf(
+        "List", "Set", "Collection", "SortedSet", "MutableList", "MutableSet",
+        "Map", "SortedMap", "MutableMap", "Properties", "Array",
+    )
+
+    fun isKnownLeafOrContainerSimpleName(simpleName: String): Boolean =
+        simpleName in KOTLIN_LEAF_SIMPLE_NAMES || simpleName in KOTLIN_CONTAINER_SIMPLE_NAMES
 }

@@ -260,6 +260,40 @@ To verify by hand:
    classpath — confirms the provider resolves the annotation by qualified name, not by requiring
    the genuine library.
 
+## Kotlin `@ConfigurationProperties` contract provider — not yet run-verified
+
+`src/main/kotlin/com/example/sample/ServerProperties.kt` and `DatabaseSettings.kt` (deliberately
+in a *separate* file) check `KotlinConfigurationPropertiesContractProvider` end to end, including
+the one limitation that doesn't exist on the Java side: no semantic type resolution, so recursion
+only follows a nested type declared in the *same file*.
+
+```kotlin
+@ConfigurationProperties(prefix = "app.server")
+data class ServerProperties(
+    val host: String,               // app.server.host — leaf
+    val timeout: Duration,          // app.server.timeout — leaf (known value type)
+    val advanced: Advanced,         // recursed into — Advanced is in this same file
+    val database: DatabaseSettings, // NOT recursed into — declared in DatabaseSettings.kt
+) {
+    data class Advanced(val retries: Int, val backoffMs: Long)
+}
+```
+
+To verify by hand:
+1. Add `app.server.hots: something` (typo'd `host`) to a profile — expect `SET_NOT_DECLARED`,
+   confirming the Kotlin provider declares the `app.server` namespace the same way the Java one
+   declares `app.mail`.
+2. Set `app.server.advanced.backoffMs: not-a-number` — expect `TYPE_MISMATCH` against `long`,
+   confirming recursion into the same-file nested `Advanced` data class produced a real,
+   correctly-typed contract from constructor properties (not fields — Kotlin has none to read).
+3. Set `app.server.database.url: jdbc:...` — expect **`SET_NOT_DECLARED`**, not silence. This is
+   the negative case that makes the same-file-only limitation concrete rather than only
+   documented: `DatabaseSettings` isn't recursed into (it's in another file), so
+   `app.server.database` itself is the only declared contract, and `app.server.database.url` is an
+   undeclared child path exactly the way an ordinary unrecognized nested object would be.
+4. Confirm `app.mail.*` (the Java fixture) and `app.server.*` (this one) both work in the same
+   analysis run — the two providers are independent and additive, not an either/or.
+
 ## Cross-system comparison scoping — the bug this fixture caught
 
 Adding `.env` and docker-compose support to a fixture that already had Spring config exposed a

@@ -22,8 +22,8 @@
           nothing in the project to supply them</li>
       <li><b>Metadata contract violations</b> — cross-checked against
           <code>spring-configuration-metadata.json</code> and, when present, your own
-          <code>@ConfigurationProperties</code> classes (Java) for keys declared but never set, set
-          but never declared, and simple type mismatches</li>
+          <code>@ConfigurationProperties</code> classes (Java and Kotlin) for keys declared but
+          never set, set but never declared, and simple type mismatches</li>
     </ul>
 
     <p>Relaxed binding is understood, so <code>driver-class-name</code>,
@@ -40,10 +40,22 @@
     reimplement the Spring Binder (nested properties inside a list/map of a custom type aren't
     modeled, only the container itself), resolve SpEL, Vault, or Config Server values, read your
     real environment variables, or modify your files. <code>@ConfigurationProperties</code>
-    reading is Java only for now; Kotlin support is planned.</p>
+    reading is a syntactic PSI walk, not semantic type resolution — for Kotlin classes specifically,
+    this means a nested property is only followed into a type declared in the same file.</p>
     ]]></description>
 
     <change-notes><![CDATA[
+    <h3>0.5.0</h3>
+    <ul>
+      <li>New: <code>@ConfigurationProperties</code> detection now also reads Kotlin classes, not
+          just Java — constructor-bound <code>data class</code> properties and body-declared
+          properties are both covered</li>
+      <li>Kotlin classification is a syntactic PSI walk, not semantic type resolution: a nested
+          property is only followed into a type declared in the same file as the annotated class</li>
+      <li>This plugin now also depends on the bundled Kotlin plugin
+          (<code>org.jetbrains.kotlin</code>)</li>
+    </ul>
+
     <h3>0.4.0</h3>
     <ul>
       <li>New: metadata contract checks (declared-but-unset, set-but-undeclared, type mismatches)
@@ -110,11 +122,13 @@
     <depends>org.jetbrains.plugins.yaml</depends>
     <depends>com.intellij.properties</depends>
     <depends>com.intellij.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
 
     <extensionPoints>
-        <!-- The seam @ConfigurationPropertiesContractProvider now plugs into, alongside
-             MetadataContractProvider — added so a future provider (e.g. Kotlin support)
-             does not require reshaping the engine either. -->
+        <!-- The seam ConfigurationPropertiesContractProvider and
+             KotlinConfigurationPropertiesContractProvider plug into, alongside
+             MetadataContractProvider — added so a future provider does not require reshaping
+             the engine either. -->
         <extensionPoint
             name="bindingContractProvider"
             interface="io.github.configdrift.spi.BindingContractProvider"
@@ -153,13 +167,25 @@
             topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
     </applicationListeners>
 
+    <!-- Required by any plugin depending on org.jetbrains.kotlin: an explicit declaration that
+         this plugin works with the Kotlin plugin's K2 mode, the default since 2024.2.1. Without
+         it, the Plugin Verifier reports "incompatible with Kotlin in K2 mode" — this plugin's
+         Kotlin PSI usage (KotlinConfigurationPropertiesContractProvider) is all K1/K2-agnostic
+         PSI tree structure, never the K1-only or K2-only resolution APIs, so both modes are
+         genuinely supported, not just declared. -->
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true"/>
+    </extensions>
+
     <!-- Contract sources go through the public extension point rather than around it, which
-         keeps the seam honest: a future provider (Kotlin support, say) adds a line here. -->
+         keeps the seam honest: a future provider adds a line here. -->
     <extensions defaultExtensionNs="io.github.configdrift">
         <bindingContractProvider
             implementation="io.github.configdrift.metadata.MetadataContractProvider"/>
         <bindingContractProvider
             implementation="io.github.configdrift.metadata.ConfigurationPropertiesContractProvider"/>
+        <bindingContractProvider
+            implementation="io.github.configdrift.metadata.KotlinConfigurationPropertiesContractProvider"/>
     </extensions>
 
     <actions>

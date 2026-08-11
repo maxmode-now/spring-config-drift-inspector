@@ -1,8 +1,9 @@
 # Example: gate PRs on Spring config drift
 #
-# Copy to .github/workflows/config-drift.yml in a Spring project that uses this CLI.
-# Build the JAR from this repo (`./gradlew :cli:shadowJar`) and attach it to a release,
-# or build it in CI as shown below.
+# Copy this file to `.github/workflows/config-drift.yml` in a Spring project.
+# It downloads the CLI JAR from a GitHub Release — no need to build this repo in CI.
+#
+# When upgrading, change both the tag (`v0.2.0`) and the jar filename in the URL below.
 
 name: Config Drift
 
@@ -20,17 +21,14 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # Option A: download a released CLI JAR
-      # - run: curl -fsSL -o config-drift-cli.jar "$CLI_JAR_URL"
-
-      # Option B: build CLI from this repository (when vendored as a submodule / monorepo)
-      - name: Build CLI
-        run: ./gradlew :cli:shadowJar
+      - name: Download config-drift CLI
+        run: |
+          curl -fsSL -o config-drift-cli.jar \
+            "https://github.com/maxmode-now/spring-config-drift-inspector/releases/download/v0.2.0/config-drift-cli-0.2.0.jar"
 
       - name: Check config drift
         run: |
-          JAR=$(ls cli/build/libs/config-drift-cli-*.jar | head -n 1)
-          java -jar "$JAR" check --path . --fail-on error --format markdown -o drift-report.md
+          java -jar config-drift-cli.jar check --path . --fail-on error --format markdown -o drift-report.md
 
       - name: Upload report
         if: always()

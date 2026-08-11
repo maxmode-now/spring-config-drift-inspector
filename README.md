@@ -122,7 +122,14 @@ toolchain automatically if one isn't already installed.
 
 ### CLI (CI gate)
 
-The same analysis engine is available headless for CI:
+The same analysis engine is available headless for CI.
+
+**In another Spring repository:** copy
+[`docs/examples/github-action-config-drift.yml`](docs/examples/github-action-config-drift.yml)
+to `.github/workflows/config-drift.yml`. That workflow downloads the released CLI JAR with
+`curl` (no Gradle build of this project required).
+
+**In this repository** (developing or packaging the CLI yourself):
 
 ```bash
 ./gradlew :cli:shadowJar
@@ -136,8 +143,7 @@ java -jar cli/build/libs/config-drift-cli-*.jar check --path . --fail-on error
 | `2` | Bad arguments or unexpected failure |
 
 `--format json|markdown`, `-o FILE`, `--fail-on error|warning|never`, and
-`--complete-profile` / `--overlay-profile` are supported. A sample GitHub Actions workflow lives
-in [`docs/examples/github-action-config-drift.yml`](docs/examples/github-action-config-drift.yml).
+`--complete-profile` / `--overlay-profile` are supported.
 
 Full docs, including format-specific gotchas and an FAQ, live in the
 [wiki](https://github.com/maxmode-now/spring-config-drift-inspector/wiki).

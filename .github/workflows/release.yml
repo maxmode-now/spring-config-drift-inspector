@@ -39,6 +39,7 @@ jobs:
 
       - name: Test and build artifacts
         run: |
+          chmod +x ./gradlew
           ./gradlew test \
             :spring-config-drift-inspector:buildPlugin \
             :cli:shadowJar \

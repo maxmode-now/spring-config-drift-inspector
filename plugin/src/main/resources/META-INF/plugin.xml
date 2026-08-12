@@ -54,6 +54,22 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <h3>0.2.1</h3>
+    <ul>
+      <li>New: headless <code>config-drift</code> CLI on GitHub Releases for CI gates
+          (<code>check --fail-on error|warning|never</code>, exit codes 0/1/2)</li>
+      <li>New: optional repo file <code>.config-drift.yml</code> for shared CLI defaults
+          (<code>fail-on</code>, <code>path</code>, <code>profiles.complete</code> /
+          <code>profiles.overlay</code>); explicit CLI flags still win. IDE Settings remain
+          separate</li>
+      <li>New: CLI <code>--format sarif</code> for GitHub Code Scanning, and
+          <code>--no-matrix</code> for shorter Markdown suitable for sticky PR comments</li>
+      <li>New: sample GitHub Action that posts a sticky Markdown report on the PR and uploads
+          SARIF (see <code>docs/examples/github-action-config-drift.yml</code>)</li>
+      <li>Analysis engine split into <code>:core</code> / <code>:cli</code> / IntelliJ plugin
+          modules; IDE behaviour unchanged for drift findings, matrix, and suppressions</li>
+    </ul>
+
     <h3>0.2.0</h3>
     <ul>
       <li>New: <code>.env</code> files are compared across profiles alongside

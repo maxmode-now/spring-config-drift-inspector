@@ -5,8 +5,15 @@ import io.github.configdrift.model.DriftReport
 import io.github.configdrift.model.Severity
 import java.time.Instant
 
-/** Feature 10: the human-readable half of report output, suitable for a PR comment. */
-class MarkdownReportRenderer : ReportRenderer {
+/**
+ * Human-readable report output (IDE clipboard copy and CLI `--format markdown`).
+ *
+ * Set [includeMatrix] to false for PR comments — the key matrix can exceed GitHub's
+ * comment size limit on larger projects.
+ */
+class MarkdownReportRenderer(
+    private val includeMatrix: Boolean = true,
+) : ReportRenderer {
 
     override val id: String = "markdown"
     override val fileExtension: String = "md"
@@ -21,7 +28,7 @@ class MarkdownReportRenderer : ReportRenderer {
         appendSummary(report)
         appendFindings(report)
         appendSuppressedNote(report)
-        appendMatrix(report)
+        if (includeMatrix) appendMatrix(report)
     }
 
     private fun StringBuilder.appendSummary(report: DriftReport) {

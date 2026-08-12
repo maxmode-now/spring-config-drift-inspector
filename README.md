@@ -127,7 +127,9 @@ The same analysis engine is available headless for CI.
 **In another Spring repository:** copy
 [`docs/examples/github-action-config-drift.yml`](docs/examples/github-action-config-drift.yml)
 to `.github/workflows/config-drift.yml`. That workflow downloads the released CLI JAR with
-`curl` (no Gradle build of this project required).
+`curl` (no Gradle build of this project required). It posts a **sticky Markdown report** on
+the PR (summary + findings; key matrix omitted via `--no-matrix`) and uploads SARIF to
+[GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning).
 
 **In this repository** (developing or packaging the CLI yourself):
 
@@ -142,12 +144,12 @@ java -jar cli/build/libs/config-drift-cli-*.jar check --path . --fail-on error
 | `1` | Findings at/above the threshold |
 | `2` | Bad arguments or unexpected failure |
 
-`--format json|markdown|sarif`, `-o FILE`, `--fail-on error|warning|never`, and
-`--complete-profile` / `--overlay-profile` are supported.
+`--format json|markdown|sarif`, `-o FILE`, `--fail-on error|warning|never`,
+`--complete-profile` / `--overlay-profile`, and `--no-matrix` (markdown only; omit the key
+matrix for PR comments) are supported.
 
-Use `--format sarif` to produce a SARIF 2.1.0 file for
-[GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning)
-(see the sample workflow). Optional project file `.config-drift.yml` in the analysis root
+Use `--format sarif` to produce a SARIF 2.1.0 file for Code Scanning (see the sample
+workflow). Optional project file `.config-drift.yml` in the analysis root
 (committed with the repo):
 
 ```yaml
@@ -202,6 +204,17 @@ Full docs, including format-specific gotchas and an FAQ, live in the
 ./gradlew :cli:shadowJar                            # headless CI binary
 ./gradlew :spring-config-drift-inspector:runIde     # sandbox IDE with the plugin installed
 ./gradlew :spring-config-drift-inspector:verifyPluginProjectConfiguration
+```
+
+### Cutting a release
+
+Bump `pluginVersion` in `gradle.properties`, commit, then push a matching tag. The
+[Release workflow](.github/workflows/release.yml) builds the plugin zip and CLI JAR and
+attaches them to a GitHub Release:
+
+```bash
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 A worked example with an intentional mix of every finding type lives in

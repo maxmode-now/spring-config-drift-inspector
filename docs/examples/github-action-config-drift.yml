@@ -3,13 +3,13 @@
 # Copy this file to `.github/workflows/config-drift.yml` in a Spring project.
 # It downloads the CLI JAR from a GitHub Release — no need to build this repo in CI.
 #
-# When upgrading, change both the tag (`v0.2.0`) and the jar filename in the URL below.
+# When upgrading, change both the tag (`v0.2.1`) and the jar filename in the URL below.
 #
 # Optional: add `.config-drift.yml` at the repo root (fail-on, path, profiles) so the
 # check step can omit those flags; explicit CLI flags still win.
 #
-# Optionally also run with `--format markdown -o drift-report.md` if you want a human
-# report artifact in addition to Code Scanning.
+# Posts a sticky Markdown report on the PR (summary + findings, no key matrix) and
+# uploads SARIF to GitHub Code Scanning. Requires CLI v0.2.1+ (`--no-matrix`, SARIF).
 
 name: Config Drift
 
@@ -19,6 +19,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: write
   security-events: write
 
 jobs:
@@ -35,11 +36,58 @@ jobs:
       - name: Download config-drift CLI
         run: |
           curl -fsSL -o config-drift-cli.jar \
-            "https://github.com/maxmode-now/spring-config-drift-inspector/releases/download/v0.2.0/config-drift-cli-0.2.0.jar"
+            "https://github.com/maxmode-now/spring-config-drift-inspector/releases/download/v0.2.1/config-drift-cli-0.2.1.jar"
 
-      - name: Check config drift
+      - name: Check config drift (markdown for PR comment)
+        id: drift_md
+        continue-on-error: true
         run: |
-          java -jar config-drift-cli.jar check --path . --fail-on error --format sarif -o drift.sarif
+          java -jar config-drift-cli.jar check \
+            --path . \
+            --fail-on error \
+            --format markdown \
+            --no-matrix \
+            -o drift-report.md
+
+      - name: Prepare PR comment body
+        if: always()
+        run: |
+          {
+            echo '<!-- config-drift-report -->'
+            echo
+            if [ -f drift-report.md ]; then
+              cat drift-report.md
+            else
+              echo '_Config drift report was not generated._'
+            fi
+          } > drift-comment.md
+
+      - name: Find existing Config Drift comment
+        if: always()
+        uses: peter-evans/find-comment@v3
+        id: drift_comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "<!-- config-drift-report -->"
+
+      - name: Post or update PR comment
+        if: always()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.drift_comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body-path: drift-comment.md
+
+      - name: Check config drift (SARIF for Code Scanning)
+        if: always()
+        run: |
+          java -jar config-drift-cli.jar check \
+            --path . \
+            --fail-on never \
+            --format sarif \
+            -o drift.sarif
 
       - name: Upload SARIF artifact
         if: always()
@@ -54,3 +102,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: drift.sarif
+
+      - name: Fail job when markdown check found errors
+        if: steps.drift_md.outcome == 'failure'
+        run: exit 1

@@ -1,0 +1,77 @@
+# Build plugin zip + CLI JAR and publish a GitHub Release when a version tag is pushed.
+#
+# Prerequisite: commit with pluginVersion = X.Y.Z in gradle.properties, then:
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify tag matches pluginVersion
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PROP=$(grep -E '^pluginVersion\s*=' gradle.properties | cut -d'=' -f2 | tr -d '[:space:]')
+          echo "tag version=$VERSION pluginVersion=$PROP"
+          if [ "$VERSION" != "$PROP" ]; then
+            echo "::error::Tag v$VERSION does not match pluginVersion=$PROP in gradle.properties"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Test and build artifacts
+        run: |
+          ./gradlew test \
+            :spring-config-drift-inspector:buildPlugin \
+            :cli:shadowJar \
+            --console=plain
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ env.VERSION }}
+          body: |
+            ## Spring Config Drift Inspector ${{ env.VERSION }}
+
+            ### Artifacts
+            - **IntelliJ plugin:** `spring-config-drift-inspector-${{ env.VERSION }}.zip` — install via Plugins → Install Plugin from Disk, or use the JetBrains Marketplace build when published
+            - **CLI (CI gate):** `config-drift-cli-${{ env.VERSION }}.jar`
+
+            ### CLI
+            ```bash
+            java -jar config-drift-cli-${{ env.VERSION }}.jar check --path . --fail-on error
+            ```
+
+            | Exit | Meaning |
+            | --- | --- |
+            | 0 | No findings at/above threshold (default: ERROR) |
+            | 1 | Findings at/above threshold |
+            | 2 | Bad arguments or unexpected failure |
+
+            Supports `--format json|markdown|sarif`, `-o FILE`, `--fail-on error|warning|never`,
+            `--complete-profile` / `--overlay-profile`, `--no-matrix` (markdown only),
+            and optional `.config-drift.yml` for shared CI defaults.
+          files: |
+            plugin/build/distributions/spring-config-drift-inspector-${{ env.VERSION }}.zip
+            cli/build/libs/config-drift-cli-${{ env.VERSION }}.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

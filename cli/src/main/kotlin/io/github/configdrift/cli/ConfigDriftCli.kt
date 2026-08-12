@@ -80,7 +80,7 @@ class ConfigDriftCli {
 
         val rendered = when (options.format) {
             Format.JSON -> JsonReportRenderer().render(report)
-            Format.MARKDOWN -> MarkdownReportRenderer().render(report)
+            Format.MARKDOWN -> MarkdownReportRenderer(includeMatrix = !options.noMatrix).render(report)
             Format.SARIF -> SarifReportRenderer().render(report)
         }
         print(rendered)
@@ -122,6 +122,7 @@ class ConfigDriftCli {
         var overlayExplicit = false
         var configFile: Path? = null
         var noConfig = false
+        var noMatrix = false
 
         var i = 1
         while (i < args.size) {
@@ -154,6 +155,9 @@ class ConfigDriftCli {
                 "--no-config" -> {
                     noConfig = true
                 }
+                "--no-matrix" -> {
+                    noMatrix = true
+                }
                 "--help", "-h" -> {
                     command = "help"
                 }
@@ -180,6 +184,7 @@ class ConfigDriftCli {
             overlayExplicit = overlayExplicit,
             configFile = configFile,
             noConfig = noConfig,
+            noMatrix = noMatrix,
         )
     }
 
@@ -204,6 +209,7 @@ class ConfigDriftCli {
               --overlay-profile NAME     Treat profile as a partial overlay
               --config FILE              Use this .config-drift.yml instead of discovering one
               --no-config                Ignore .config-drift.yml
+              --no-matrix                Omit the key matrix (markdown only; useful for PR comments)
               -h, --help                 Show this help
 
             Project file (optional):
@@ -232,6 +238,7 @@ class ConfigDriftCli {
         val overlayExplicit: Boolean = false,
         val configFile: Path? = null,
         val noConfig: Boolean = false,
+        val noMatrix: Boolean = false,
     )
 
     enum class Format {
